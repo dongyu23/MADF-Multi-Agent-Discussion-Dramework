@@ -51,11 +51,20 @@ cd MADF
 ```
 
 #### 3. 配置密钥
-复制配置文件副本：
+MADF 采用环境变量管理配置。请复制示例文件并填入你的密钥：
 ```bash
-cp config.example.py config.py
+cp .env.example .env
 ```
-编辑 `config.py`，填入你的 LLM API Key (推荐使用智谱 GLM-4.6) 和 SerpAPI Key (用于角色联网搜索)。
+编辑 `.env` 文件：
+```ini
+# LLM API Configuration
+API_KEY=your_glm_api_key
+MODEL_NAME=glm-4.6
+BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+
+# Search API Configuration (Optional)
+SERPAPI_API_KEY=your_serpapi_key
+```
 
 #### 4. 方式一：一键脚本启动 (推荐)
 - **Windows**: 双击根目录下的 **`start.bat`**。

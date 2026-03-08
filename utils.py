@@ -3,20 +3,13 @@ import json
 import time
 import re
 from zhipuai import ZhipuAI
-
-# Try to import from config.py if it exists (local dev), otherwise fallback to environment variables (Vercel)
-try:
-    from config import API_KEY, MODEL_NAME
-except ImportError:
-    API_KEY = os.environ.get("API_KEY")
-    MODEL_NAME = os.environ.get("MODEL_NAME")
-
-# Fail gracefully if API key is missing
-if not API_KEY:
-    print("Warning: API_KEY is missing. Please check your config.py or environment variables.")
+from app.core.config import settings
 
 # ZhipuAI client with timeout configuration
-client = ZhipuAI(api_key=API_KEY)
+client = ZhipuAI(
+    api_key=settings.API_KEY,
+    base_url=settings.BASE_URL
+)
 
 def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30):
     """
@@ -34,7 +27,7 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
             # Simple retry wrapper
             if stream:
                 return client.chat.completions.create(
-                    model=MODEL_NAME,
+                    model=settings.MODEL_NAME,
                     messages=messages,
                     stream=True,
                     temperature=0.8,
@@ -44,7 +37,7 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
                 )
             
             response = client.chat.completions.create(
-                model=MODEL_NAME,
+                model=settings.MODEL_NAME,
                 messages=messages,
                 stream=False,
                 temperature=0.8,

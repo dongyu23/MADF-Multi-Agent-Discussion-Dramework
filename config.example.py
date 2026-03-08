@@ -1,3 +1,0 @@
-
-API_KEY = "YOUR_API_KEY_HERE"
-MODEL_NAME = "glm-4-air" 
