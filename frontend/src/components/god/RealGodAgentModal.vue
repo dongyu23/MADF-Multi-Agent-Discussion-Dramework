@@ -366,6 +366,13 @@ const handleViewPersona = () => {
   personaStore.fetchPersonas()
   router.push('/personas')
 }
+
+// Watch visibility to refresh list when modal closes if generation happened
+watch(visible, (newVal) => {
+  if (!newVal && messages.value.some(m => m.items?.some(i => i.type === 'persona'))) {
+    personaStore.fetchPersonas()
+  }
+})
 </script>
 
 <style scoped>

@@ -34,13 +34,6 @@
           </router-link>
         </a-menu-item>
 
-        <a-menu-item key="test">
-          <router-link to="/test">
-            <tool-outlined />
-            <span>API测试</span>
-          </router-link>
-        </a-menu-item>
-
         <a-menu-divider />
         
         <a-menu-item key="logout" @click="handleLogout">
@@ -70,7 +63,6 @@ import {
   DashboardOutlined,
   TeamOutlined,
   CommentOutlined,
-  ToolOutlined,
   LogoutOutlined
 } from '@ant-design/icons-vue'
 
@@ -87,7 +79,6 @@ const selectedKeys = computed(() => {
   if (route.path === '/' || route.path.startsWith('/dashboard')) return ['dashboard']
   if (route.path.startsWith('/personas')) return ['personas']
   if (route.path.startsWith('/forums')) return ['forums']
-  if (route.path.startsWith('/test')) return ['test']
   return []
 })
 </script>

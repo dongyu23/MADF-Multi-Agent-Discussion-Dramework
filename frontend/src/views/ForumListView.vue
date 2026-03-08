@@ -229,6 +229,7 @@ const handleOk = async () => {
 
 const handleDelete = async (id: number) => {
     await forumStore.deleteForum(id)
+    await forumStore.fetchForums()
 }
 </script>
 

@@ -3,7 +3,6 @@ import { useAuthStore } from '@/stores/auth'
 import BasicLayout from '@/layouts/BasicLayout.vue'
 import UserLayout from '@/layouts/UserLayout.vue'
 import HomeView from '@/views/HomeView.vue'
-import TestView from '@/views/TestView.vue'
 import LoginView from '@/views/LoginView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import PersonaView from '@/views/PersonaView.vue'
@@ -55,11 +54,6 @@ const router = createRouter({
           path: 'forums/:id',
           name: 'forum-detail',
           component: ForumDetailView
-        },
-        {
-          path: 'test',
-          name: 'test',
-          component: TestView
         }
       ]
     },

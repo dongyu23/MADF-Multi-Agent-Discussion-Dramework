@@ -75,6 +75,7 @@
 import { ref, nextTick, watch, computed } from 'vue'
 import { useGodStore } from '@/stores/god'
 import { useRouter } from 'vue-router'
+import { usePersonaStore } from '@/stores/persona'
 
 const props = defineProps<{
   open: boolean
@@ -83,6 +84,7 @@ const props = defineProps<{
 const emit = defineEmits(['update:open'])
 
 const godStore = useGodStore()
+const personaStore = usePersonaStore()
 const router = useRouter()
 const input = ref('')
 const chatWindowRef = ref<HTMLElement | null>(null)
@@ -139,8 +141,16 @@ const handleCancel = () => {
 
 const handleViewPersona = () => {
   visible.value = false
+  personaStore.fetchPersonas()
   router.push('/personas')
 }
+
+// Watch visibility to refresh list when modal closes if generation happened
+watch(visible, (newVal) => {
+  if (!newVal && godStore.messages.some(m => m.personas && m.personas.length > 0)) {
+    personaStore.fetchPersonas()
+  }
+})
 </script>
 
 <style scoped>
