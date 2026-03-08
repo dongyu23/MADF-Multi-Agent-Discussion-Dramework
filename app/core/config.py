@@ -17,6 +17,11 @@ class Settings(BaseSettings):
             return self.TURSO_DATABASE_URL
             
         # 2. Local SQLite (Dev/Docker)
+        # Check environment variable first for override
+        env_db_url = os.environ.get("DATABASE_URL")
+        if env_db_url:
+            return env_db_url
+            
         return "file:madf.db"
 
     class Config:

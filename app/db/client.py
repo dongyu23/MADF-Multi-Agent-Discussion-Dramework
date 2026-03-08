@@ -20,6 +20,16 @@ class Database:
         # sync_client is used to match the existing synchronous codebase.
         token = self.auth_token if self.is_remote else None
         
+        # Ensure directory exists for local file
+        if not self.is_remote and self.url.startswith("file:"):
+            db_path = self.url.replace("file:", "")
+            db_dir = os.path.dirname(os.path.abspath(db_path))
+            if db_dir and not os.path.exists(db_dir):
+                try:
+                    os.makedirs(db_dir, exist_ok=True)
+                except OSError as e:
+                    logger.warning(f"Failed to create database directory: {e}")
+
         client = libsql_client.create_client_sync(
             url=self.url,
             auth_token=token
@@ -38,27 +48,35 @@ class Database:
         with open(schema_path, "r", encoding="utf-8") as f:
             schema_sql = f.read()
 
-        logger.info(f"Initializing database at {self.url}...")
-        
+        # Check if DB needs init (e.g. check if users table exists)
         try:
-            with self.get_connection() as client:
-                # Split schema into individual statements because execute() usually runs one statement
-                # But libsql_client.execute() might support multiple? 
-                # Better to split by ';' to be safe, but simple splitting is fragile.
-                # However, libsql_client.batch() is better for multiple statements.
-                # Let's try batch execution.
-                
-                # Simple split by statement separator
-                statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
-                
-                if statements:
-                    client.batch(statements)
-                    
-                logger.info("Database initialized successfully.")
+             with self.get_connection() as client:
+                 # Check if table exists
+                 try:
+                     client.execute("SELECT 1 FROM users LIMIT 1")
+                     logger.info("Database already initialized.")
+                     return
+                 except Exception:
+                     # Table doesn't exist, proceed with init
+                     pass
+                     
+                 logger.info(f"Initializing database at {self.url}...")
+                 
+                 # Simple split by statement separator
+                 statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
+                 
+                 if statements:
+                     # For SQLite, batch might not be supported or behaves differently in some clients
+                     # Execute one by one
+                     for stmt in statements:
+                         try:
+                             client.execute(stmt)
+                         except Exception as e:
+                             logger.warning(f"Error executing statement: {e}")
+                             
+                 logger.info("Database initialized successfully.")
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
-            # If it's a "table already exists" error, we might want to ignore or handle gracefully
-            # But CREATE TABLE IF NOT EXISTS should handle it.
             raise e
 
 db_manager = Database()

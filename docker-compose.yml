@@ -9,10 +9,12 @@ services:
     container_name: madf-app
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=file:/app/data/madf.db
     env_file:
       - .env
     volumes:
-      - ./madf.db:/app/madf.db
+      - madf_data:/app/data
     restart: always
 
 volumes:
