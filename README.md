@@ -44,13 +44,13 @@ MADF 采用 **现代化的前后端分离架构**，后端基于 Python 异步�
 graph TD
     User[用户 (Browser)]
     
-    subgraph Frontend [前端 (Vue 3 + Vite)]
+    subgraph Frontend ["前端 (Vue 3 + Vite)"]
         UI[界面组件 (Ant Design Vue)]
         Store[状态管理 (Pinia)]
         WS_Client[WebSocket 客户端]
     end
     
-    subgraph Backend [后端 (FastAPI)]
+    subgraph Backend ["后端 (FastAPI)"]
         API[API 网关 / 路由]
         Auth[认证与权限 (OAuth2/JWT)]
         
