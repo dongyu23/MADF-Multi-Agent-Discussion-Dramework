@@ -142,106 +142,103 @@ graph TD
 
 ### 🚀 快速启动
 
-你可以选择**一键脚本启动**（推荐），也可以选择**手动分步启动**。
+MADF 提供了灵活的启动方式，既支持 **Docker 一键部署**（推荐），也支持 **本地源码开发**。
 
-#### 1. 环境准备
-确保你的电脑上安装了：
-*   Python 3.10+
-*   Node.js 16+
-*   Git
+#### 前置要求
+- **操作系统**: Windows 10+ / macOS / Linux
+- **依赖环境**:
+  - Python 3.10+
+  - Node.js 18+ (仅源码开发需要)
+  - Docker & Docker Compose (仅容器化部署需要)
+- **API 密钥**: 必须持有智谱 AI 的 API Key。
 
-#### 2. 克隆项目
+---
+
+#### 1. 配置环境变量 (所有方式通用)
+
+在项目根目录下复制配置文件并填入密钥：
+
 ```bash
-git clone https://github.com/your-repo/MADF.git
-cd MADF
-```
-
-#### 3. 配置密钥
-MADF 采用环境变量管理配置。请复制示例文件并填入你的密钥：
-```bash
+# 复制示例配置
 cp .env.example .env
 ```
-编辑 `.env` 文件：
-```ini
-# LLM API Configuration
-API_KEY=your_glm_api_key
-MODEL_NAME=glm-4.6
-BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 
-# Search API Configuration
-SERPAPI_API_KEY=your_serpapi_key
+编辑 `.env` 文件，填入你的 API Key：
+
+```ini
+# LLM Configuration
+API_KEY=your_glm_api_key_here
+MODEL_NAME=glm-4.6
+
+# Search API (可选，用于 God Agent 联网搜索)
+SERPAPI_API_KEY=your_serpapi_key_here
 ```
 
-#### 4. 方式一：一键脚本启动 (推荐)
-- **Windows**: 双击根目录下的 **`start.bat`**。
-- **Mac/Linux**: 运行 `./start.sh`。
+---
 
-#### 5. 方式二：手动分步启动
+#### 2. 方式一：Docker 一键启动 (推荐)
 
-如果你希望更精细地控制运行过程，可以分别启动后端和前端：
+最适合快速体验或生产环境部署。
 
-**步骤 A: 启动后端 (FastAPI)**
 ```bash
-# 创建并激活虚拟环境
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Mac/Linux: source .venv/bin/activate
+# 启动所有服务 (后端 + 前端 + 数据库)
+docker-compose up -d
 
-# 安装依赖
+# 查看日志
+docker-compose logs -f
+```
+
+- **访问地址**: `http://localhost:8000` (前端静态资源已由后端托管)
+- **API 文档**: `http://localhost:8000/docs`
+
+---
+
+#### 3. 方式二：本地源码启动 (开发模式)
+
+适合需要修改代码的开发者。
+
+**步骤 A: 启动后端 (Python/FastAPI)**
+
+```bash
+# 1. 创建并激活虚拟环境
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# Mac/Linux:
+source .venv/bin/activate
+
+# 2. 安装依赖
 pip install -r requirements.txt
 
-# 启动服务
+# 3. 初始化数据库 (首次运行需要)
+# 系统会自动在 data/madf.db 创建表结构
+
+# 4. 启动服务 (开启热重载)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-后端服务地址: `http://localhost:8000/docs`
 
-**步骤 B: 启动前端 (Vue 3)**
+**步骤 B: 启动前端 (Vue 3/Vite)**
+
 ```bash
 cd frontend
 
-# 安装依赖
+# 1. 安装依赖
 npm install
 
-# 启动开发服务器
+# 2. 启动开发服务器
 npm run dev
 ```
-前端访问地址: `http://localhost:5173`
 
-#### 6. 方式三：Docker 部署 (推荐生产环境)
+- **前端访问**: `http://localhost:5173`
+- **后端 API**: `http://localhost:8000`
 
-如果你希望在容器化环境中运行 MADF，可以使用提供的 Dockerfile。它会自动构建前端并由后端统一提供服务：
-
-```bash
-# 构建镜像
-docker build -t madf:latest .
-
-# 运行容器
-# 请确保通过环境变量传入 API 密钥
-docker run -d -p 8000:8000 \
-  -e API_KEY="你的_LLM_API_KEY" \
-  -e MODEL_NAME="glm-4.6" \
-  -e SERPAPI_API_KEY="你的_SERPAPI_KEY" \
-  madf:latest
-```
-访问地址: `http://localhost:8000`
+> **注意**: 在开发模式下，前端 Vite 服务器会通过代理 (Proxy) 将 API 请求转发到后端 8000 端口，请确保后端已启动。
 
 ---
 
-### 🖥️ 体验流程
+#### 4. 常见问题 (FAQ)
 
-1.  **访问前端**: 浏览器打开 `http://localhost:5173`。
-2.  **创建角色**: 点击“上帝模式”，输入“乔布斯”或“一位悲观的历史学家”，观察 AI 如何通过搜索构建角色档案。
-3.  **开启论坛**: 设定议题（如“AI 是否会毁灭人类？”），选择参与者，点击“开始”。
-4.  **旁观/干预**: 你可以作为上帝静静观察，也可以随时暂停，查看智能体的“内心独白”，甚至直接干预讨论走向。
-
----
-
-### 📚 深入阅读
-
-*   **[架构设计](docs/ARCHITECTURE.md)**: 理解系统的灵魂与骨架。
-*   **[开发指南](docs/GUIDE.md)**: 如何从零开始构建你的智能体。
-*   **[实验报告](exam/results/)**: 查看我们在“人类是否应该探索火星”等议题上的消融实验结果。
-
----
-
-**加入 MADF，让 AI 不止于问答，更始于思考。**
+- **Q: 启动后无法联网搜索角色信息？**
+  - A: 请检查 `.env` 中的 `SERPAPI_API_KEY` 是否配置。如果没有，God Agent 将无法获取实时信息。
+- **Q: WebSocket 连接失败？**
+  - A: 请确保没有防火墙或代理软件拦截 `ws://localhost:8000` 的连接。
