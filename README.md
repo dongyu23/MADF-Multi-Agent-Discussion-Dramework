@@ -42,37 +42,37 @@ MADF 采用 **现代化的前后端分离架构**，后端基于 Python 异步�
 
 ```mermaid
 graph TD
-    User[用户 (Browser)]
+    User["用户 (Browser)"]
     
     subgraph Frontend ["前端 (Vue 3 + Vite)"]
-        UI[界面组件 (Ant Design Vue)]
-        Store[状态管理 (Pinia)]
-        WS_Client[WebSocket 客户端]
+        UI["界面组件 (Ant Design Vue)"]
+        Store["状态管理 (Pinia)"]
+        WS_Client["WebSocket 客户端"]
     end
     
     subgraph Backend ["后端 (FastAPI)"]
-        API[API 网关 / 路由]
-        Auth[认证与权限 (OAuth2/JWT)]
+        API["API 网关 / 路由"]
+        Auth["认证与权限 (OAuth2/JWT)"]
         
-        subgraph Services [核心服务层]
-            Scheduler[论坛调度器 (ForumScheduler)]
-            GodAgent[角色生成 (God Agent)]
-            Moderator[主持人代理]
-            Participant[嘉宾代理]
+        subgraph Services ["核心服务层"]
+            Scheduler["论坛调度器 (ForumScheduler)"]
+            GodAgent["角色生成 (God Agent)"]
+            Moderator["主持人代理"]
+            Participant["嘉宾代理"]
         end
         
-        WS_Server[WebSocket 服务端]
-        LLM_Client[LLM 统一接口 (ZhipuAI)]
+        WS_Server["WebSocket 服务端"]
+        LLM_Client["LLM 统一接口 (ZhipuAI)"]
     end
     
-    subgraph Data [数据层]
-        SQLite[(SQLite/PostgreSQL)]
-        Redis[(Redis 缓存/消息队列)]
+    subgraph Data ["数据层"]
+        SQLite[("SQLite/PostgreSQL")]
+        Redis[("Redis 缓存/消息队列")]
     end
     
-    subgraph External [外部服务]
-        GLM4[智谱 GLM-4 API]
-        Search[搜索引擎 API]
+    subgraph External ["外部服务"]
+        GLM4["智谱 GLM-4 API"]
+        Search["搜索引擎 API"]
     end
 
     User <-->|HTTP/WebSocket| Frontend
