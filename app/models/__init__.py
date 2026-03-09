@@ -75,7 +75,7 @@ class Message(BaseModel):
     speaker_name: str
     content: str
     turn_count: int = 0
-    thoughts: Optional[str] = None
+    thought: Optional[str] = None # Renamed from thoughts to thought
     timestamp: datetime
     
     model_config = ConfigDict(from_attributes=True)

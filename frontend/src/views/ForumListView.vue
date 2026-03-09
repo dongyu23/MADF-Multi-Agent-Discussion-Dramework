@@ -228,8 +228,16 @@ const handleOk = async () => {
 }
 
 const handleDelete = async (id: number) => {
-    await forumStore.deleteForum(id)
-    await forumStore.fetchForums()
+    forumStore.loading = true
+    try {
+        await forumStore.deleteForum(id)
+        await forumStore.fetchForums()
+        message.success('删除成功')
+    } catch (e: any) {
+        message.error(e.message || '删除失败')
+    } finally {
+        forumStore.loading = false
+    }
 }
 </script>
 

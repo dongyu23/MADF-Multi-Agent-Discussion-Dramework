@@ -117,10 +117,23 @@ const showSystemLogModal = () => {
 }
 
 onMounted(async () => {
-  await forumStore.fetchForum(forumId)
-  // Fetch my personas not strictly needed for display but good for context
-  await personaStore.fetchPersonas(authStore.user?.id) 
-  connect()
+  try {
+    // 1. Load static forum data first via HTTP
+    await forumStore.fetchForum(forumId)
+    
+    // 2. Load messages immediately via HTTP (don't wait for WS)
+    await forumStore.fetchMessages(forumId)
+    
+    // 3. Load participant info context
+    personaStore.fetchPersonas(authStore.user?.id).catch(e => console.warn('Persona fetch failed', e))
+    
+    // 4. Connect WS in background for realtime updates
+    // Non-blocking call
+    connect()
+  } catch (e) {
+    console.error('Failed to load forum details', e)
+    // Even if load fails, allow navigation back
+  }
 })
 
 onUnmounted(() => {
@@ -136,11 +149,16 @@ const handleDelete = async () => {
 const handleStart = async () => {
     starting.value = true
     try {
+        // Ensure WebSocket is connected BEFORE starting the forum task
+        // This ensures we catch the very first "System Log" messages
         if (!isConnected.value) {
-            connect()
+            await connect()
         }
         await forumStore.startForum(forumId)
+        // fetchMessages is called by connect() on open, but good to ensure
         await forumStore.fetchMessages(forumId)
+    } catch (e) {
+        console.error('Start failed', e)
     } finally {
         starting.value = false
     }

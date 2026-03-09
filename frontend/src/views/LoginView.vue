@@ -70,6 +70,14 @@
           <span>还没有账号？</span>
           <router-link to="/auth/register" class="link-btn">立即注册</router-link>
         </div>
+
+        <div class="disclaimer">
+          <a-divider style="margin: 16px 0; font-size: 12px; color: #999;">风险声明</a-divider>
+          <p>
+            <warning-outlined /> 本系统生成的 AI 角色发言可能包含错误、误导性信息或虚构内容，不代表真实人物观点。
+            本平台内容仅供学术研究与娱乐演示，请勿作为专业建议。用户需自行甄别信息真伪，使用本服务产生的风险与后果由用户自行承担。
+          </p>
+        </div>
       </a-form>
     </a-card>
   </div>
@@ -78,7 +86,7 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { UserOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { UserOutlined, LockOutlined, WarningOutlined } from '@ant-design/icons-vue'
 
 const authStore = useAuthStore()
 const formState = reactive({
@@ -150,6 +158,18 @@ const onFinish = async (values: any) => {
 
 .link-btn:hover {
   text-decoration: underline;
+}
+
+.disclaimer {
+  margin-top: 24px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.disclaimer p {
+  margin: 0;
 }
 
 @media (max-width: 576px) {

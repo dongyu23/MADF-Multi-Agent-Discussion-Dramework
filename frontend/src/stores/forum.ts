@@ -9,6 +9,7 @@ export interface Message {
   moderator_id?: number | null
   speaker_name: string
   content: string
+  thought?: string | null // Added thought field
   timestamp: string
 }
 
@@ -60,6 +61,16 @@ export const useForumStore = defineStore('forum', {
       try {
         const res = await request.get(`/forums/${forumId}/logs`)
         this.systemLogs = res.data
+        
+        // Restore "thinking" or "speaking" state based on last log
+        if (this.systemLogs.length > 0) {
+            const lastLog = this.systemLogs[this.systemLogs.length - 1]
+            if (lastLog.level === 'thought' || lastLog.content.includes('正在思考')) {
+                this.thinking = true
+            } else {
+                this.thinking = false
+            }
+        }
       } catch (error) {
         console.error('Failed to fetch system logs:', error)
       }
@@ -73,6 +84,7 @@ export const useForumStore = defineStore('forum', {
         persona_id: number | null, 
         moderator_id?: number | null, 
         stream_id?: string, 
+        thought?: string | null,
         timestamp: string 
     }) {
         // Robust logic: Use stream_id if available to find the message
@@ -92,6 +104,10 @@ export const useForumStore = defineStore('forum', {
         
         if (targetMsg) {
             targetMsg.content += chunk.content
+            // Thought usually comes with the first chunk or separately, update if present
+            if (chunk.thought && !targetMsg.thought) {
+                targetMsg.thought = chunk.thought
+            }
         } else {
             // Start new streaming message
             const newMsg: Message = {
@@ -101,6 +117,7 @@ export const useForumStore = defineStore('forum', {
                 moderator_id: chunk.moderator_id || null,
                 speaker_name: chunk.speaker_name,
                 content: chunk.content,
+                thought: chunk.thought, // Initialize thought
                 timestamp: chunk.timestamp,
             }
             ;(newMsg as any).isStreaming = true
@@ -143,7 +160,6 @@ export const useForumStore = defineStore('forum', {
         this.forums = res.data
       } catch (error) {
         console.error('Failed to fetch forums:', error)
-        this.forums = []
       } finally {
         this.loading = false
       }
@@ -164,7 +180,14 @@ export const useForumStore = defineStore('forum', {
     async fetchMessages(forumId: number) {
       try {
         const res = await request.get(`/forums/${forumId}/messages`)
+        // Filter out system logs that might be returned as messages (legacy check)
+        // Assuming /messages only returns chat messages now.
+        // We need to fetch system logs separately or if they are mixed.
+        // Let's assume /messages is just chat.
         this.messages = res.data
+        
+        // Also fetch system logs to restore "Thinking..." state context
+        await this.fetchSystemLogs(forumId)
       } catch (error) {
         console.error(`Failed to fetch messages for forum ${forumId}:`, error)
         this.messages = []
@@ -220,21 +243,25 @@ export const useForumStore = defineStore('forum', {
     async deleteForum(id: number) {
       try {
         await request.delete(`/forums/${id}`)
-        message.success('论坛已删除')
-        if (this.currentForum && this.currentForum.id === id) {
-            this.currentForum = null
-        }
+        // Remove locally to update UI immediately
         this.forums = this.forums.filter(f => f.id !== id)
+        if (this.currentForum && this.currentForum.id === id) {
+             this.currentForum = null
+        }
       } catch (error) {
         console.error('Failed to delete forum:', error)
-        message.error('删除失败')
+        throw error
       }
     },
     leaveForum() {
+      // Don't clear messages immediately to prevent flicker when switching
+      // But clearing currentForum is fine
+      // Actually, clearing messages is safer to avoid showing wrong forum data
       this.messages = []
       this.systemLogs = []
       this.currentForum = null
       this.thinking = false
+      // Important: Reset loading state in case we left mid-load
       this.loading = false
     }
   }

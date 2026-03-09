@@ -24,6 +24,7 @@ def create_user(db: Any, user: UserCreate):
     try:
         pwd_hash = Hasher.get_password_hash(safe_password)
         created_at = datetime.now()
+        # In PG we rely on RETURNING * which is supported by execute wrapper now
         rs = db.execute(
             "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?) RETURNING *",
             [user.username, pwd_hash, user.role, created_at]
@@ -92,7 +93,7 @@ def update_persona(db, persona_id: int, updates: PersonaUpdate):
 def delete_persona(db, persona_id: int):
     try:
         rs = db.execute("DELETE FROM personas WHERE id = ?", [persona_id])
-        return rs.rows_affected > 0
+        return rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
     except Exception as e:
         logger.error(f"Error deleting persona: {e}")
         raise
@@ -132,7 +133,26 @@ def create_forum(db, forum: ForumCreate, creator_id: int):
                     values.extend([db_forum.id, pid, "[]"])
 
                 if values:
-                    query = f"INSERT OR IGNORE INTO forum_participants (forum_id, persona_id, thoughts_history) VALUES {', '.join(placeholders)}"
+                    # SQLite 'INSERT OR IGNORE' -> PG 'INSERT ... ON CONFLICT DO NOTHING'
+                    # But since we support both, we need to detect or use standard SQL if possible.
+                    # 'INSERT OR IGNORE' is SQLite specific. PG uses 'ON CONFLICT DO NOTHING'.
+                    # Let's check db type or use a try-catch for duplicates?
+                    # Or use a compatible syntax? No standard syntax for this.
+                    # We can use the db object to check type if we exposed it.
+                    # Assuming PostgresClient handles this replacement? No, we only replaced ? with %s.
+                    # Let's change to standard INSERT and catch error, or assume PG client will replace it?
+                    # No, replace logic is simple string replace.
+                    # Let's use ON CONFLICT if PG, but we are in shared code.
+                    # Workaround: Use a helper or just try-except loop for now?
+                    # Or simply change query based on db type? We don't have db type here easily.
+                    # Actually, we can use "INSERT INTO ... VALUES ... ON CONFLICT DO NOTHING" for PG.
+                    # But SQLite requires "ON CONFLICT" clause support (v3.24+).
+                    # "INSERT OR IGNORE" is safer for SQLite.
+                    # Let's try to detect via a hack or just use "INSERT INTO" and ignore errors?
+                    # Better: "INSERT INTO ... VALUES ... ON CONFLICT (forum_id, persona_id) DO NOTHING"
+                    # This works in SQLite 3.24+ and Postgres 9.5+.
+                    # Let's use this modern syntax.
+                    query = f"INSERT INTO forum_participants (forum_id, persona_id, thoughts_history) VALUES {', '.join(placeholders)} ON CONFLICT (forum_id, persona_id) DO NOTHING"
                     tx.execute(query, values)
 
         return get_forum(db, db_forum.id)
@@ -147,7 +167,7 @@ def delete_forum(db, forum_id: int):
             tx.execute("DELETE FROM forum_participants WHERE forum_id = ?", [forum_id])
             tx.execute("DELETE FROM system_logs WHERE forum_id = ?", [forum_id])
             rs = tx.execute("DELETE FROM forums WHERE id = ?", [forum_id])
-            return rs.rows_affected > 0
+            return rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
     except Exception as e:
         logger.error(f"Error deleting forum: {e}")
         raise
@@ -255,8 +275,8 @@ def create_message(db, message: MessageCreate):
         timestamp = datetime.now()
         rs = db.execute(
             """
-            INSERT INTO messages (forum_id, persona_id, moderator_id, speaker_name, content, turn_count, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (forum_id, persona_id, moderator_id, speaker_name, content, turn_count, thought, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             """,
             [
@@ -266,6 +286,7 @@ def create_message(db, message: MessageCreate):
                 message.speaker_name,
                 message.content,
                 message.turn_count,
+                message.thought,
                 timestamp
             ]
         )

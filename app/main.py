@@ -32,12 +32,16 @@ app = FastAPI(
 # Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Global exception: {str(exc)}", exc_info=True)
+    import traceback
+    error_msg = f"Global exception: {str(exc)}\n{traceback.format_exc()}"
+    logger.error(error_msg)
+    
+    # Return structured error response
     return JSONResponse(
         status_code=500,
         content={
-            "code": 500, 
-            "detail": f"Internal Server Error: {str(exc)}", 
+            "code": 500,
+            "detail": str(exc), # Explicitly expose error detail for debugging
             "message": "服务器内部错误，请稍后重试",
             "data": None
         },

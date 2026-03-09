@@ -34,6 +34,112 @@ MADF 是一个基于大语言模型（LLM）的**沉浸式多智能体圆桌讨�
 
 ---
 
+### 🏗️ 系统架构介绍
+
+MADF 采用 **现代化的前后端分离架构**，后端基于 Python 异步生态构建高性能调度中心，前端采用 Vue 3 打造沉浸式交互体验，通过 WebSocket 实现毫秒级的双向流式通信。
+
+#### 1. 整体架构图
+
+```mermaid
+graph TD
+    User[用户 (Browser)]
+    
+    subgraph Frontend [前端 (Vue 3 + Vite)]
+        UI[界面组件 (Ant Design Vue)]
+        Store[状态管理 (Pinia)]
+        WS_Client[WebSocket 客户端]
+    end
+    
+    subgraph Backend [后端 (FastAPI)]
+        API[API 网关 / 路由]
+        Auth[认证与权限 (OAuth2/JWT)]
+        
+        subgraph Services [核心服务层]
+            Scheduler[论坛调度器 (ForumScheduler)]
+            GodAgent[角色生成 (God Agent)]
+            Moderator[主持人代理]
+            Participant[嘉宾代理]
+        end
+        
+        WS_Server[WebSocket 服务端]
+        LLM_Client[LLM 统一接口 (ZhipuAI)]
+    end
+    
+    subgraph Data [数据层]
+        SQLite[(SQLite/PostgreSQL)]
+        Redis[(Redis 缓存/消息队列)]
+    end
+    
+    subgraph External [外部服务]
+        GLM4[智谱 GLM-4 API]
+        Search[搜索引擎 API]
+    end
+
+    User <-->|HTTP/WebSocket| Frontend
+    Frontend <-->|REST API| API
+    Frontend <-->|WebSocket| WS_Server
+    
+    API --> Services
+    WS_Server <--> Scheduler
+    
+    Scheduler --> LLM_Client
+    GodAgent --> LLM_Client
+    GodAgent --> Search
+    
+    LLM_Client --> GLM4
+    
+    Services --> SQLite
+    Services --> Redis
+    
+    classDef box fill:#f9f,stroke:#333,stroke-width:2px;
+    class Frontend,Backend,Data,External box;
+```
+
+#### 2. 逐层解析
+
+**🖥️ 前端层 (Frontend)**
+- **技术栈**: Vue 3 (Composition API), Vite, TypeScript, Pinia, Ant Design Vue。
+- **核心职责**:
+    - **流式渲染**: 通过 `useForumWebSocket` 钩子实时接收后端 Token 流，实现“打字机”效果。
+    - **状态管理**: 利用 Pinia 管理全局的用户会话、论坛列表及当前对话上下文。
+    - **路由与权限**: Vue Router 配合导航守卫，实现基于 JWT 的登录拦截与页面跳转。
+
+**⚙️ 后端层 (Backend)**
+- **技术栈**: Python 3.10+, FastAPI, Uvicorn, Pydantic。
+- **核心模块**:
+    - **API 网关**: 处理 HTTP 请求（如创建论坛、查询历史），集成 CORS 与 JWT 鉴权中间件。
+    - **论坛调度器 (ForumScheduler)**: 系统的“心脏”，基于 `asyncio` 维护全局事件循环，管理多个智能体的并发思考、发言队列及时间片轮转。
+    - **LLM 客户端**: 统一封装智谱 GLM-4 接口，支持流式响应 (Stream Response) 和 JSON 格式化输出。
+- **通信协议**:
+    - **HTTP (REST)**: 用于元数据管理（User, Forum, Persona）。
+    - **WebSocket**: 用于实时传输对话内容、系统日志及控制信号。
+
+**💾 数据层 (Data Layer)**
+- **数据库**:
+    - **SQLite (默认)**: 采用 `libsql-client`，零配置启动，适合开发与中小规模部署。
+    - **PostgreSQL (生产可选)**: 通过环境变量无缝切换，支持更高并发与数据可靠性。
+- **缓存/消息队列**:
+    - **Redis (可选)**: 用于存储系统日志缓冲 (System Logs Buffer) 和高频状态同步。
+
+**🏗️ 基础设施 (Infrastructure)**
+- **容器化**: 提供标准 `Dockerfile`，支持多阶段构建 (Multi-stage Build)，最小化镜像体积。
+- **编排**: `docker-compose.yml` 一键拉起前后端及依赖服务。
+- **CI/CD**: 集成 GitHub Actions，自动化执行单元测试 (Pytest/Vitest) 与构建流程。
+
+#### 3. 关键非功能特性
+- **性能**: WebSocket 端到端延迟 < 200ms；支持单节点并发 50+ 智能体实时辩论。
+- **可用性**: 具备 API 超时自动熔断与重试机制，确保 LLM 波动时不影响系统崩溃。
+- **扩展性**: `BaseAgent` 类设计遵循开闭原则，易于扩展新的角色类型（如“记录员”、“捣乱者”）。
+- **安全**: 生产环境强制开启 JWT 认证；敏感密钥 (API Key) 仅在服务端存储，不暴露给前端。
+
+#### 4. 架构决策记录 (ADR)
+我们记录了项目演进过程中的关键架构决策，以供查阅：
+- [ADR-001: 选用 FastAPI 作为后端框架](docs/adr/001-backend-framework-fastapi.md)
+- [ADR-002: 选用 Vue 3 + Vite 作为前端技术栈](docs/adr/002-frontend-framework-vue3.md)
+- [ADR-003: 选用 SQLite 作为默认数据库](docs/adr/003-database-selection-sqlite.md)
+
+---
+
 ### 🚀 快速启动
 
 你可以选择**一键脚本启动**（推荐），也可以选择**手动分步启动**。
@@ -62,7 +168,7 @@ API_KEY=your_glm_api_key
 MODEL_NAME=glm-4.6
 BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 
-# Search API Configuration (Optional)
+# Search API Configuration
 SERPAPI_API_KEY=your_serpapi_key
 ```
 

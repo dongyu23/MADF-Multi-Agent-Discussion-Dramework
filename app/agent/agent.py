@@ -132,19 +132,20 @@ class ParticipantAgent(BaseAgent):
 
         请进行“快思考”，你的任务是通过主观思考判断自己是否需要申请讲话。
         **不要使用通用的官方的逻辑（如利弊分析），不要和稀泥，不要攻击他人。**
-        **请从你的理论武库中挑选1-2个理论作为切入点。**
+        
+        **关于是否发言的决策 (DECISION)**:
+        - 如果你觉得当前的讨论很有趣，或者你有强烈的反驳欲望，或者你想补充一个重要的观点，请果断选择 **APPLY_SPEAK**。
+        - 只有当你觉得完全插不上话，或者已经非常疲惫时，才选择 LISTEN。
+        - 甚至可以为了活跃气氛而发言。
+        - 不要因为害怕出错而不敢发言。
+        - **请尽可能积极地参与讨论，不要总是沉默。**
 
-        请进行一段自由的内心独白（Inner Monologue），表达你对当前讨论的真实看法、情感反应以及是否想要发言的冲动。
-        你可以带有个人情绪，可以偏激，可以热情，切忌机械化。
+        请严格按照以下 JSON 格式输出，包含你的完整内心独白和最终决策，不要包含任何 Markdown 代码块：
+        {{
+            "inner_monologue": "（重要：这是一段只有你自己能看到的私密独白。请完全屏蔽外界，专注于你内心最真实的想法。不要使用任何社交辞令，不要向任何人解释，不要表忠心。请以第一人称‘我’，批判性地审视当前的局势，诚实地评估其他人的观点，并在此基础上规划你的下一步行动。）",
+            "decision": "APPLY_SPEAK" 或 "LISTEN"
+        }}
 
-        最后，请明确给出你的决策：是申请发言（APPLY_SPEAK）还是继续倾听（LISTEN）。
-
-        请严格按照以下格式输出：
-        DECISION: [APPLY_SPEAK | LISTEN]
-        INNER_MONOLOGUE: [你的内心独白内容]
-        THEORY_USED: [引用的理论，如果没有则填无]
-        PREVIOUS_VIEW: [对前一个发言者的简要看法]
-        BENEFIT: [如果发言，你的发言能带来什么新视角]
         """
         
         messages = [
@@ -152,7 +153,8 @@ class ParticipantAgent(BaseAgent):
             {"role": "user", "content": prompt}
         ]
         
-        response = get_chat_completion(messages) # No json_mode=True, use text parsing
+        # Use json_mode=True if supported by model/utils, but here we just ask for JSON text
+        response = get_chat_completion(messages) 
         if response:
             content = response.choices[0].message.content
             return self._parse_think_response(content)
@@ -167,43 +169,52 @@ class ParticipantAgent(BaseAgent):
             "benefit": ""
         }
         try:
+            # 1. Try to extract JSON part
+            json_str = content
+            
+            import re
+            # Try to find JSON block if mixed with text
+            json_match = re.search(r'(\{[\s\S]*\})\s*$', content)
+            if json_match:
+                json_str = json_match.group(1)
+            
+            # Try to parse JSON
+            data = parse_json_from_response(json_str)
+            
+            if data and isinstance(data, dict):
+                # New simplified structure: { "inner_monologue": "...", "decision": "APPLY_SPEAK" }
+                action = str(data.get("decision", "")).upper()
+                
+                if "APPLY_SPEAK" in action or "SPEAK" in action:
+                    result["action"] = "apply_to_speak"
+                else:
+                    result["action"] = "listen"
+                    
+                result["mind"] = data.get("inner_monologue", "")
+                
+                # Extract meta-info from inner_monologue implicitly or leave empty
+                # Since we removed structured fields, we rely on the speak prompt to use the whole monologue
+                result["theory_used"] = ""
+                result["previous"] = "" 
+                result["benefit"] = ""
+                
+                return result
+                
+            # Fallback to legacy text parsing if JSON fails
             normalized = content.replace("：", ":")
             lines = normalized.strip().split('\n')
-            current_key = None
             
-            for line in lines:
-                line = line.strip()
-                if not line: continue
-
-                upper_line = line.upper()
-                if upper_line.startswith("DECISION:") or upper_line.startswith("行动:") or upper_line.startswith("决策:"):
-                    action_str = line.split(":", 1)[1].strip().upper()
-                    if "APPLY_SPEAK" in action_str or "SPEAK" in action_str or "申请发言" in line or "发言" in line:
-                        result["action"] = "apply_to_speak"
-                    else:
-                        result["action"] = "listen"
-                elif upper_line.startswith("INNER_MONOLOGUE:") or line.startswith("内心独白:"):
-                    current_key = "mind"
-                    result["mind"] = line.split(":", 1)[1].strip()
-                elif upper_line.startswith("THEORY_USED:") or line.startswith("引用理论:"):
-                    current_key = "theory_used"
-                    result["theory_used"] = line.split(":", 1)[1].strip()
-                elif upper_line.startswith("PREVIOUS_VIEW:") or line.startswith("前序观点:"):
-                    current_key = "previous"
-                    result["previous"] = line.split(":", 1)[1].strip()
-                elif upper_line.startswith("BENEFIT:") or line.startswith("预期贡献:"):
-                    current_key = "benefit"
-                    result["benefit"] = line.split(":", 1)[1].strip()
-                elif current_key:
-                    result[current_key] += " " + line
-
-            if result["action"] == "listen":
-                raw_upper = normalized.upper()
-                if "APPLY_SPEAK" in raw_upper or "申请发言" in normalized:
-                    result["action"] = "apply_to_speak"
-
+            # Simple keyword check for legacy fallback (simplified)
+            raw_upper = normalized.upper()
+            if "APPLY_SPEAK" in raw_upper or "申请发言" in normalized:
+                result["action"] = "apply_to_speak"
+            
+            # Try to grab content as mind if not JSON
+            result["mind"] = content
+            
             return result
-        except Exception:
+        except Exception as e:
+            # Fallback for parsing errors
             return result
 
     def speak(self, thought, context):
@@ -243,10 +254,7 @@ class ParticipantAgent(BaseAgent):
         {intro_instruction}
         
         【你的思考】
-        之前的观点: {thought['previous']}
-        内心戏: {thought['mind']}
-        引用理论: {thought.get('theory_used', '未指定')}
-        预期贡献: {thought['benefit']}
+        {thought['mind']}
 
         请基于以上思考，发表你的观点。
         

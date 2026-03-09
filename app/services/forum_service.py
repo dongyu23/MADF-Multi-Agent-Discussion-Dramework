@@ -48,14 +48,17 @@ class ForumService:
         await scheduler.start_forum(forum_id, ablation_flags)
         return {"status": "started", "ablation_flags": ablation_flags}
 
-    def delete_forum(self, forum_id: int, user_id: int, is_admin: bool = False):
+    async def delete_forum(self, forum_id: int, user_id: int, is_admin: bool = False):
         forum = get_forum(self.db, forum_id)
         if not forum:
             raise HTTPException(status_code=404, detail="Forum not found")
             
         if forum.creator_id != user_id and not is_admin:
             raise HTTPException(status_code=403, detail="Not authorized")
-            
+        
+        # Stop any running tasks for this forum first
+        await scheduler.stop_forum(forum_id)
+        
         return delete_forum(self.db, forum_id)
 
     async def post_message(self, forum_id: int, msg_in: MessageCreate):

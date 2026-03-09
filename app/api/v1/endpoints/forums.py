@@ -81,13 +81,13 @@ def read_forum(forum_id: int, db: Any = Depends(get_db)):
     return db_forum
 
 @router.delete("/{forum_id}")
-def delete_forum_endpoint(
+async def delete_forum_endpoint(
     forum_id: int,
     current_user: Annotated[Any, Depends(get_current_user)],
     service: ForumService = Depends(get_forum_service)
 ):
     is_admin = current_user.role == 'admin'
-    success = service.delete_forum(forum_id, current_user.id, is_admin)
+    success = await service.delete_forum(forum_id, current_user.id, is_admin)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete forum")
     return {"message": "Forum deleted successfully"}

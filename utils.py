@@ -2,8 +2,18 @@ import os
 import json
 import time
 import re
-from zhipuai import ZhipuAI
+from zhipuai import ZhipuAI, APIRequestFailedError, APITimeoutError
+try:
+    from zhipuai import APIError
+except ImportError:
+    # Handle older versions or different structure where APIError might be named differently or not exported
+    # But usually it is there. Let's check if it's ZhipuAIError or similar.
+    # Actually, let's just use Exception as fallback if not found.
+    class APIError(Exception): pass
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ZhipuAI client with timeout configuration
 client = ZhipuAI(
@@ -11,20 +21,18 @@ client = ZhipuAI(
     base_url=settings.BASE_URL
 )
 
-def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30):
+def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30, callback=None):
     """
     Wrapper for ZhipuAI chat completion with retry logic and timeout.
+    
+    Args:
+        callback: Optional async function(error_msg: str) to report errors to system log
     """
     attempt = 0
+    last_error = None
+    
     while attempt < max_retries:
         try:
-            # We can't directly set timeout on method call for zhipuai easily without modifying client init
-            # But the underlying httpx client respects global timeout if set on client.
-            # For now, we rely on the default or network level timeouts.
-            # To implement custom timeout per request, we would need to recreate client or use threading.
-            # ZhipuAI 2.0+ uses httpx.Client under the hood.
-            
-            # Simple retry wrapper
             if stream:
                 return client.chat.completions.create(
                     model=settings.MODEL_NAME,
@@ -47,19 +55,38 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
             )
             return response
             
+        except APIRequestFailedError as e:
+            # 429 Rate Limit or 500 Server Error
+            error_msg = f"API Request Failed (Attempt {attempt+1}/{max_retries}): {e}"
+            logger.warning(error_msg)
+            if callback:
+                # We can't await here easily as this is sync function, 
+                # but caller usually wraps this in to_thread.
+                # So we can't call async callback directly.
+                # Just log for now.
+                pass
+            last_error = e
+            
+        except APITimeoutError as e:
+            error_msg = f"API Timeout ({timeout}s) (Attempt {attempt+1}/{max_retries})"
+            logger.warning(error_msg)
+            last_error = e
+            
+        except APIError as e:
+            error_msg = f"API Error (Attempt {attempt+1}/{max_retries}): {e}"
+            logger.warning(error_msg)
+            last_error = e
+            
         except Exception as e:
-            attempt += 1
-            # Check for rate limit error (429) specifically
-            is_rate_limit = "429" in str(e) or "rate_limit" in str(e).lower()
+            error_msg = f"Unknown Error (Attempt {attempt+1}/{max_retries}): {e}"
+            logger.error(error_msg)
+            last_error = e
             
-            print(f"Error calling API (Attempt {attempt}/{max_retries}): {e}")
-            if attempt >= max_retries:
-                print("Max retries reached. Returning None.")
-                return None
+        attempt += 1
+        if attempt < max_retries:
+            time.sleep(1 + attempt) # Exponential backoff: 2s, 3s, 4s...
             
-            # If it's a rate limit error, wait longer
-            backoff = attempt * 2 if is_rate_limit else attempt
-            time.sleep(backoff) 
+    logger.error(f"Chat completion failed after {max_retries} attempts. Last error: {last_error}")
     return None
 
 def parse_json_from_response(content):

@@ -21,6 +21,21 @@
       </div>
       
       <div class="message-bubble">
+        <!-- Thought Process Expansion -->
+        <div v-if="thought" class="thought-process">
+            <a-collapse ghost :bordered="false" style="background: transparent; padding: 0;">
+                <a-collapse-panel key="1" header="思考过程 (点击展开)" style="border: none; padding: 0;">
+                    <template #extra>
+                        <bulb-outlined />
+                    </template>
+                    <div class="thought-content">
+                        {{ thought }}
+                    </div>
+                </a-collapse-panel>
+            </a-collapse>
+            <div class="thought-divider"></div>
+        </div>
+
         <div v-if="isStreaming" class="streaming-indicator">
           <loading-outlined />
         </div>
@@ -32,11 +47,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { LoadingOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { LoadingOutlined, UserOutlined, BulbOutlined } from '@ant-design/icons-vue'
 
 const props = defineProps<{
   speakerName: string
   content: string
+  thought?: string | null // Added thought prop
   timestamp: string
   isSelf: boolean
   isStreaming?: boolean
@@ -138,5 +154,36 @@ const avatarColor = computed(() => {
 .message-moderator .message-bubble {
   background: #fffbe6; /* Light gold background */
   border: 1px solid #ffe58f;
+}
+
+.thought-process {
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.thought-content {
+    background: rgba(0, 0, 0, 0.03);
+    padding: 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+    color: #666;
+    font-style: italic;
+    white-space: pre-wrap;
+}
+
+.thought-divider {
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
+    margin: 8px 0;
+}
+
+/* Customize collapse header style */
+:deep(.ant-collapse-header) {
+    padding: 0 !important;
+    font-size: 12px !important;
+    color: #999 !important;
+}
+
+:deep(.ant-collapse-content-box) {
+    padding: 0 !important;
 }
 </style>

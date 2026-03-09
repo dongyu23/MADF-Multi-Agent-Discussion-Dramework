@@ -3,7 +3,7 @@ import re
 import requests
 from typing import List, Dict, Any, Generator, Tuple, Optional
 from utils import get_chat_completion, parse_json_from_response
-from config import SERPAPI_API_KEY
+from app.core.config import settings
 
 # ==========================================
 # Prompts
@@ -88,31 +88,43 @@ from utils import get_chat_completion
 logger = logging.getLogger(__name__)
 
 # Search Configuration
-SERPAPI_API_KEY = settings.SERPAPI_API_KEY
+SERPAPI_API_KEY = getattr(settings, "SERPAPI_API_KEY", None)
 
 class RealGodAgent:
     def __init__(self, max_steps: int = 10):
         self.max_steps = max_steps
         self.searched_queries = set()
 
-    async def search_web(self, query: str) -> str:
+    def search(self, query: str) -> str:
         """
         Perform web search using SerpApi (primary) or DuckDuckGo (fallback).
+        Synchronous method to match run() generator.
         """
         try:
             # 1. Try SerpApi if key is available
             if SERPAPI_API_KEY:
                 logger.info(f"Searching with SerpApi: {query}")
-                params = {
-                    "q": query,
-                    "api_key": SERPAPI_API_KEY,
-                    "engine": "google",
-                    "num": 5
-                }
-                # ... existing serpapi code ...
-                # Since we don't have the full serpapi implementation here, let's assume it's handled or we use requests
-                # For now, let's use the fallback logic structure
-                pass 
+                try:
+                    params = {
+                        "engine": "google",
+                        "q": query,
+                        "api_key": SERPAPI_API_KEY,
+                        "num": 5
+                    }
+                    response = requests.get("https://serpapi.com/search", params=params, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        organic_results = data.get("organic_results", [])
+                        if organic_results:
+                            formatted_results = []
+                            for r in organic_results:
+                                title = r.get("title", "No Title")
+                                link = r.get("link", "#")
+                                snippet = r.get("snippet", "No Snippet")
+                                formatted_results.append(f"Title: {title}\nLink: {link}\nSnippet: {snippet}")
+                            return "\n\n".join(formatted_results)
+                except Exception as e:
+                    logger.warning(f"SerpApi failed, falling back to DDG: {e}")
 
             # 2. Fallback to DuckDuckGo (No API Key required)
             logger.info(f"Searching with DuckDuckGo: {query}")

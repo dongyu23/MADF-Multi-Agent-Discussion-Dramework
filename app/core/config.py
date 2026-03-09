@@ -31,27 +31,26 @@ class Settings(BaseSettings):
     TURSO_AUTH_TOKEN: Optional[str] = None
     DATABASE_URL_OVERRIDE: Optional[str] = None # Renamed from DATABASE_URL to avoid conflict
     
+    # Redis Configuration
+    REDIS_URL: str = "redis://localhost:6379/0"
+    
     # Determine which database to use
     @property
     def DATABASE_URL(self) -> str:
-        # 1. Turso (Remote)
-        if self.TURSO_DATABASE_URL and self.TURSO_AUTH_TOKEN:
-            return self.TURSO_DATABASE_URL
-            
-        # 2. Local SQLite (Dev/Docker)
-        # Check environment variable first for override
-        # Pydantic loads DATABASE_URL_OVERRIDE from env var DATABASE_URL_OVERRIDE
-        # But we also want to support standard DATABASE_URL env var if user sets it directly
-        if self.DATABASE_URL_OVERRIDE:
-             return self.DATABASE_URL_OVERRIDE
-        
-        # Fallback to direct env check for DATABASE_URL if Pydantic didn't catch it 
-        # (though Pydantic usually prefers exact field names, so DATABASE_URL env var might be ignored if no field matches)
-        # Let's check os.environ directly for backward compat or Docker convenience
+        # 1. Check environment variable DATABASE_URL first
+        # This supports both PostgreSQL and SQLite
         env_db = os.environ.get("DATABASE_URL")
         if env_db:
             return env_db
             
+        # 2. Turso (Legacy support)
+        if self.TURSO_DATABASE_URL and self.TURSO_AUTH_TOKEN:
+            return self.TURSO_DATABASE_URL
+            
+        # 3. Local SQLite (Dev/Docker default)
+        if self.DATABASE_URL_OVERRIDE:
+             return self.DATABASE_URL_OVERRIDE
+        
         return "file:madf.db"
 
 settings = Settings()

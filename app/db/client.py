@@ -1,5 +1,7 @@
 import os
 import libsql_client
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from app.core.config import settings
 import logging
 import json
@@ -7,14 +9,97 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+class PostgresClient:
+    def __init__(self, dsn):
+        self.dsn = dsn
+
+    def execute(self, sql, args=None):
+        conn = psycopg2.connect(self.dsn)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Replace SQLite placeholder ? with %s
+                sql = sql.replace('?', '%s')
+                cur.execute(sql, args)
+                conn.commit()
+                
+                # Try to fetch results if it's a SELECT
+                try:
+                    rows = cur.fetchall()
+                    if cur.description:
+                        columns = [desc[0] for desc in cur.description]
+                        return PostgresResult(rows, columns)
+                except psycopg2.ProgrammingError:
+                    # No results to fetch
+                    pass
+                
+                # Check for RETURNING id (simulating lastrowid)
+                # But we need to know if the query had RETURNING...
+                # Actually, for INSERTs, we should modify the SQL to add RETURNING id if needed?
+                # Or rely on explicit RETURNING in SQL?
+                # The existing code uses lastrowid.
+                # In PG, we must use RETURNING id.
+                # But we can't auto-inject it easily without parsing.
+                # Let's handle lastrowid by checking if 'id' is in returned rows if user added RETURNING.
+                
+                return PostgresResult([], [])
+        finally:
+            conn.close()
+
+    def transaction(self):
+        return PostgresTransaction(self.dsn)
+
+    def close(self):
+        pass
+
+class PostgresResult:
+    def __init__(self, rows, columns):
+        self.rows = [tuple(row[col] for col in columns) for row in rows]
+        self.columns = columns
+        self.lastrowid = None # PG requires RETURNING id
+        if rows and 'id' in columns:
+             self.lastrowid = rows[0]['id']
+
+class PostgresTransaction:
+    def __init__(self, dsn):
+        self.conn = psycopg2.connect(dsn)
+        self.cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+
+    def execute(self, sql, args=None):
+        sql = sql.replace('?', '%s')
+        self.cursor.execute(sql, args)
+        # Fetch if needed... but execute inside transaction usually doesn't return result object in libsql wrapper?
+        # Wait, libsql transaction.execute returns result.
+        try:
+            rows = self.cursor.fetchall()
+            columns = [desc[0] for desc in self.cursor.description]
+            res = PostgresResult(rows, columns)
+            return res
+        except psycopg2.ProgrammingError:
+             return PostgresResult([], [])
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.cursor.close()
+        self.conn.close()
+
 class Database:
     def __init__(self):
         self.url = settings.DATABASE_URL
         self.auth_token = settings.TURSO_AUTH_TOKEN
-        # Determine if we are using a remote Turso DB
+        # Determine DB type
+        self.is_postgres = self.url.startswith("postgresql://") or self.url.startswith("postgres://")
         self.is_remote = self.url.startswith("libsql://") or self.url.startswith("https://")
         
     def get_connection(self):
+        if self.is_postgres:
+            return PostgresClient(self.url)
+            
+        # ... (Existing SQLite/LibSQL logic) ...
         # Create a new client/connection for each request/scope
         # For local file, this is fast. For remote, it handles HTTP/WS.
         # sync_client is used to match the existing synchronous codebase.
@@ -35,12 +120,18 @@ class Database:
             auth_token=token
         )
         client.execute("PRAGMA foreign_keys = ON")
-        client.execute("PRAGMA busy_timeout = 5000")
+        client.execute("PRAGMA journal_mode = WAL")  # Enable Write-Ahead Logging for concurrency
+        client.execute("PRAGMA busy_timeout = 10000") # Increase timeout to 10s
         return client
 
     def init_db(self):
         """Initialize the database with schema."""
-        schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
+        if self.is_postgres:
+            schema_file = "schema_pg.sql"
+        else:
+            schema_file = "schema.sql"
+            
+        schema_path = os.path.join(os.path.dirname(__file__), schema_file)
         if not os.path.exists(schema_path):
             logger.error(f"Schema file not found at {schema_path}")
             return
@@ -50,7 +141,9 @@ class Database:
 
         # Check if DB needs init (e.g. check if users table exists)
         try:
-             with self.get_connection() as client:
+             # Use a fresh connection
+             client = self.get_connection()
+             try:
                  # Check if table exists
                  try:
                      client.execute("SELECT 1 FROM users LIMIT 1")
@@ -75,6 +168,8 @@ class Database:
                              logger.warning(f"Error executing statement: {e}")
                              
                  logger.info("Database initialized successfully.")
+             finally:
+                 client.close()
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             raise e

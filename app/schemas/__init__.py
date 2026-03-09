@@ -164,6 +164,7 @@ class ForumResponse(ForumBase):
 class MessageBase(BaseModel):
     speaker_name: str
     content: str
+    thought: Optional[str] = None # Added thought field
     turn_count: int = 0
 
 class MessageCreate(MessageBase):
@@ -177,6 +178,7 @@ class MessageResponse(MessageBase):
     persona_id: Optional[int]
     moderator_id: Optional[int] = None
     timestamp: datetime
+    thought: Optional[str] = None # Ensure it's in response
 
     model_config = ConfigDict(from_attributes=True)
 
