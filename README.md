@@ -167,31 +167,41 @@ cp .env.example .env
 
 ```ini
 # LLM Configuration
-API_KEY=your_glm_api_key_here
-MODEL_NAME=glm-4.6
+API_KEY="your_api_key_here"
+MODEL_NAME="glm-4.5"
+BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 
 # Search API (可选，用于 God Agent 联网搜索)
-SERPAPI_API_KEY=your_serpapi_key_here
+SERPAPI_API_KEY="your_serpapi_key_here"
 ```
+
+> **注意**: `BASE_URL` 必须以 `https://` 开头并以 `/` 结尾，适配 OpenAI 兼容接口。
 
 ---
 
 #### 2. 方式一：Docker 一键启动 (推荐)
 
-最适合快速体验或生产环境部署。
+最适合快速体验或生产环境部署。我们提供了预构建的 Docker 镜像，您可以直接拉取运行，无需本地构建。该镜像已内置 Redis 服务，无需额外部署。
 
 ```bash
-# 启动所有服务 (后端 + 前端 + 数据库)
-docker-compose up -d
+# 1. 拉取最新镜像
+docker pull frozenfish717/madf:latest
 
-# 查看日志
-docker-compose logs -f
+# 2. 启动容器
+# 注意：需要挂载数据卷以持久化数据库，并传入环境变量
+docker run -d \
+  --name madf-app \
+  -p 8000:8000 \
+  -v madf_data:/app/data \
+  --env-file .env \
+  --restart always \
+  frozenfish717/madf:latest
 ```
 
-- **访问地址**: `http://localhost:8000` (前端静态资源已由后端托管)
-- **API 文档**: `http://localhost:8000/docs`
+> **提示**：您可以选择使用 `--env-file .env` 加载配置文件（推荐），或者直接使用 `-e` 参数在命令行中传入环境变量。如果使用 `-e`，请确保将示例中的占位符替换为您的真实密钥。
 
----
+- **访问地址**: `http://localhost:8000`
+- **API 文档**: `http://localhost:8000/docs`
 
 #### 3. 方式二：本地源码启动 (开发模式)
 

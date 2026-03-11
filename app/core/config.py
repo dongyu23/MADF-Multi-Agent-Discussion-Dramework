@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     DATABASE_URL_OVERRIDE: Optional[str] = None # Renamed from DATABASE_URL to avoid conflict
     
     # Redis Configuration
+    # Default to localhost inside the same container or service mesh
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Determine which database to use
