@@ -88,7 +88,8 @@ from utils import get_chat_completion
 logger = logging.getLogger(__name__)
 
 # Search Configuration
-SERPAPI_API_KEY = settings.SERPAPI_API_KEY
+# Removed static assignment to allow dynamic settings lookup
+# SERPAPI_API_KEY = settings.SERPAPI_API_KEY
 
 class RealGodAgent:
     def __init__(self, max_steps: int = 10):
@@ -100,15 +101,18 @@ class RealGodAgent:
         Perform web search using SerpApi (primary) or DuckDuckGo (fallback).
         Synchronous method to match run() generator.
         """
+        # Ensure we use the latest configuration (e.g. from environment)
+        current_serpapi_key = settings.SERPAPI_API_KEY
+        
         try:
             # 1. Try SerpApi if key is available
-            if SERPAPI_API_KEY:
+            if current_serpapi_key:
                 logger.info(f"Searching with SerpApi: {query}")
                 try:
                     params = {
                         "engine": "google",
                         "q": query,
-                        "api_key": SERPAPI_API_KEY,
+                        "api_key": current_serpapi_key,
                         "num": 5
                     }
                     response = requests.get("https://serpapi.com/search", params=params, timeout=10)
@@ -123,6 +127,8 @@ class RealGodAgent:
                                 snippet = r.get("snippet", "No Snippet")
                                 formatted_results.append(f"Title: {title}\nLink: {link}\nSnippet: {snippet}")
                             return "\n\n".join(formatted_results)
+                    else:
+                        logger.warning(f"SerpApi returned status {response.status_code}: {response.text}")
                 except Exception as e:
                     logger.warning(f"SerpApi failed, falling back to DDG: {e}")
 
@@ -166,16 +172,32 @@ class RealGodAgent:
 
         except Exception as e:
             error_msg = str(e)
+            
+            # 尝试获取当前的 API Key 以便调试 (仅在安全环境中)
+            try:
+                current_key = settings.final_api_key
+                # Mask key for partial safety: first 5 and last 5 chars
+                if len(current_key) > 10:
+                    masked_key = f"{current_key}...{current_key[-5:]}"
+                else:
+                    masked_key = current_key
+            except:
+                masked_key = "Unknown/Not Set"
+                
             logger.error(f"LLM Call Error in RealGodAgent: {error_msg}")
+            logger.error(f"Debug Info - API Key: {masked_key}, Model: {settings.final_model_name}, Base URL: {settings.final_base_url}")
+
             # Provide more user-friendly error messages for common issues
             if "401" in error_msg:
-                user_msg = "鉴权失败: API Key 无效或过期"
+                user_msg = f"鉴权失败 (401): API Key 无效或过期。当前使用 Key: {masked_key}"
+            elif "404" in error_msg:
+                user_msg = f"资源未找到 (404): 模型 '{settings.final_model_name}' 不存在或 API 路径错误。URL: {settings.final_base_url}"
             elif "429" in error_msg:
-                user_msg = "请求过于频繁: 达到 API 速率限制"
+                user_msg = "请求过于频繁 (429): 达到 API 速率限制，请稍后重试。"
             elif "timeout" in error_msg.lower():
-                user_msg = "请求超时: LLM 响应时间过长"
+                user_msg = "请求超时: LLM 响应时间过长 (Timeout)"
             elif "connection" in error_msg.lower():
-                user_msg = "网络错误: 无法连接到 LLM 服务"
+                user_msg = f"网络错误: 无法连接到 LLM 服务 ({settings.final_base_url})"
             else:
                 user_msg = f"LLM 错误: {error_msg}"
                 
