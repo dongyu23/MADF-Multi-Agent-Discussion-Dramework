@@ -45,8 +45,9 @@ export const usePersonaStore = defineStore('persona', {
     async createPersona(data: CreatePersonaData) {
       this.loading = true
       try {
-        await request.post('/personas/', data)
-        await this.fetchPersonas()
+        const res = await request.post('/personas/', data)
+        // Optimistic update: Add to list immediately
+        this.personas.unshift(res.data)
       } catch (error) {
         console.error('Failed to create persona:', error)
         throw error
@@ -64,20 +65,43 @@ export const usePersonaStore = defineStore('persona', {
       }
     },
     async updatePersona(id: number, data: Partial<CreatePersonaData>) {
+      // Snapshot
+      const index = this.personas.findIndex(p => p.id === id)
+      const previousPersona = index !== -1 ? { ...this.personas[index] } : null
+      
+      // Optimistic update
+      if (index !== -1) {
+          this.personas[index] = { ...this.personas[index], ...data } as Persona
+      }
+      
       try {
-        await request.put(`/personas/${id}`, data)
-        await this.fetchPersonas()
+        const res = await request.put(`/personas/${id}`, data)
+        // Update with server response to ensure consistency
+        if (index !== -1) {
+            this.personas[index] = res.data
+        }
       } catch (error) {
         console.error('Failed to update persona:', error)
+        // Rollback
+        if (previousPersona && index !== -1) {
+            this.personas[index] = previousPersona
+        }
         throw error
       }
     },
     async deletePersona(id: number) {
+      // Snapshot
+      const previousPersonas = [...this.personas]
+      
+      // Optimistic update
+      this.personas = this.personas.filter(p => p.id !== id)
+      
       try {
         await request.delete(`/personas/${id}`)
-        await this.fetchPersonas()
       } catch (error) {
         console.error('Failed to delete persona:', error)
+        // Rollback
+        this.personas = previousPersonas
         throw error
       }
     }

@@ -154,7 +154,11 @@ export const useForumStore = defineStore('forum', {
         // Auto-scroll logic could be triggered here or in component watcher
     },
     async fetchForums() {
-      this.loading = true
+      // Background update if data exists
+      const isBackground = this.forums.length > 0
+      if (!isBackground) {
+          this.loading = true
+      }
       try {
         const res = await request.get('/forums/')
         this.forums = res.data
@@ -165,14 +169,26 @@ export const useForumStore = defineStore('forum', {
       }
     },
     async fetchForum(id: number) {
+        // If we already have this forum loaded, skip full load or do light refresh
+        if (this.currentForum && this.currentForum.id === id) {
+            this.fetchMessages(id) // Background
+            return
+        }
+
+        // Switching forums, clear old data first
+        if (this.currentForum) {
+            this.clearForumData()
+        }
+        
         this.loading = true
-        this.currentForum = null
         try {
             const res = await request.get(`/forums/${id}`)
             this.currentForum = res.data
             await this.fetchMessages(id)
         } catch (error) {
             console.error(`Failed to fetch forum ${id}:`, error)
+            // If failed, make sure currentForum is null so UI handles it
+            this.currentForum = null
         } finally {
             this.loading = false
         }
@@ -180,17 +196,10 @@ export const useForumStore = defineStore('forum', {
     async fetchMessages(forumId: number) {
       try {
         const res = await request.get(`/forums/${forumId}/messages`)
-        // Filter out system logs that might be returned as messages (legacy check)
-        // Assuming /messages only returns chat messages now.
-        // We need to fetch system logs separately or if they are mixed.
-        // Let's assume /messages is just chat.
         this.messages = res.data
-        
-        // Also fetch system logs to restore "Thinking..." state context
         await this.fetchSystemLogs(forumId)
       } catch (error) {
         console.error(`Failed to fetch messages for forum ${forumId}:`, error)
-        this.messages = []
       }
     },
     async fetchModerators() {
@@ -219,7 +228,8 @@ export const useForumStore = defineStore('forum', {
           duration_minutes: duration
         })
         message.success('论坛创建成功')
-        await this.fetchForums()
+        // Optimistic update: Add to list immediately
+        this.forums.unshift(res.data)
         return res.data
       } catch (error) {
         console.error('Failed to create forum:', error)
@@ -241,29 +251,81 @@ export const useForumStore = defineStore('forum', {
       }
     },
     async deleteForum(id: number) {
+      // Optimistic update: Remove locally first
+      const previousForums = [...this.forums]
+      const previousCurrentForum = this.currentForum
+      
+      this.forums = this.forums.filter(f => f.id !== id)
+      
+      // If we are deleting the current forum, we should probably stop it first?
+      // But delete endpoint handles cleanup.
+      
+      if (this.currentForum && this.currentForum.id === id) {
+           this.currentForum = null
+      }
+      
       try {
+        // Try to stop first if it's running? 
+        // Backend delete should handle it, but let's be safe
+        // Actually, backend delete_forum endpoint does cleanup tasks.
         await request.delete(`/forums/${id}`)
-        // Remove locally to update UI immediately
-        this.forums = this.forums.filter(f => f.id !== id)
-        // If we are deleting the current forum, clear it
-        if (this.currentForum && this.currentForum.id === id) {
-             this.currentForum = null
-        }
       } catch (error) {
         console.error('Failed to delete forum:', error)
+        // Rollback on failure
+        this.forums = previousForums
+        this.currentForum = previousCurrentForum
         throw error
       }
+    },
+    // New Action: Stop Forum
+    async stopForum(id: number) {
+        try {
+            await request.post(`/forums/${id}/stop`)
+            // Update local status if applicable
+            const f = this.forums.find(f => f.id === id)
+            if (f) f.status = 'closed'
+            if (this.currentForum && this.currentForum.id === id) {
+                this.currentForum.status = 'closed'
+            }
+            message.success('论坛已停止')
+        } catch (error) {
+            console.error('Failed to stop forum:', error)
+            message.error('停止失败')
+        }
     },
     leaveForum() {
       // Don't clear messages immediately to prevent flicker when switching
       // But clearing currentForum is fine
       // Actually, clearing messages is safer to avoid showing wrong forum data
-      this.messages = []
-      this.systemLogs = []
-      this.currentForum = null
+      // MODIFIED: Don't clear if we are just navigating back but might return (keep cache)
+      // But user asked "即使用户点击返回，页面也不会卸载，以便不重复读取"
+      // So we should NOT clear messages here.
+      
+      // this.messages = [] // Keep messages in store
+      // this.systemLogs = [] // Keep logs
+      
+      // But if we enter ANOTHER forum, we must clear.
+      // fetchForum() handles clearing: `this.currentForum = null` and re-fetching.
+      
+      // However, we should stop thinking state?
       this.thinking = false
-      // Important: Reset loading state in case we left mid-load
       this.loading = false
+      
+      // We only clear currentForum ref but keep data until overwritten?
+      // No, if we clear currentForum, UI might break if it relies on it.
+      // Let's keep currentForum too, but maybe mark as "inactive"?
+      // The requirement says: "user current executing forum, page won't unload".
+      // This implies keeping the state.
+      
+      // So leaveForum should be minimal.
+    },
+    
+    // New Action: Clear Forum Data (explicitly called when needed, e.g. entering NEW forum)
+    clearForumData() {
+        this.messages = []
+        this.systemLogs = []
+        this.currentForum = null
+        this.thinking = false
     }
   }
 })

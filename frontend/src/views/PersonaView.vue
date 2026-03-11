@@ -1,71 +1,101 @@
 <template>
   <div class="persona-page">
     <div class="persona-content-wrapper">
-      <div class="page-header">
-        <div class="header-title">
-          <span class="title">智能体工坊</span>
-          <span class="subtitle">管理您的智能体角色，定义个性与认知体系</span>
+        <div class="page-header">
+          <div class="header-title">
+            <span class="title">智能体工坊</span>
+            <span class="subtitle">管理您的智能体角色，定义个性与认知体系</span>
+          </div>
+          <a-space>
+            <a-button type="primary" ghost @click="showRealGodModal" class="real-god-btn">
+              <global-outlined /> 上帝生成真实角色 (联网)
+            </a-button>
+            <a-button type="primary" ghost @click="showGodModal">
+              <thunderbolt-outlined /> 调用上帝生成全新智能体
+            </a-button>
+            <a-button type="primary" @click="showModal()">
+              <plus-outlined /> 创建智能体
+            </a-button>
+          </a-space>
         </div>
-        <a-space>
-          <a-button type="primary" ghost size="large" @click="showRealGodModal" class="real-god-btn">
-            <global-outlined /> 上帝生成真实角色 (联网)
-          </a-button>
-          <a-button type="primary" ghost size="large" @click="showGodModal">
-            <thunderbolt-outlined /> 调用上帝生成全新智能体
-          </a-button>
-          <a-button type="primary" size="large" @click="showModal()">
-            <plus-outlined /> 创建智能体
-          </a-button>
-        </a-space>
-      </div>
 
-      <a-tabs v-model:activeKey="activeTab" class="persona-tabs">
-        <a-tab-pane key="grid" tab="卡片视图">
-          <a-spin :spinning="personaStore.loading">
-            <div class="persona-grid">
-              <a-card
-                v-for="persona in personaStore.personas"
-                :key="persona.id"
-                hoverable
-                class="persona-card"
-              >
-                <template #actions>
-                  <eye-outlined key="view" @click="showDetails(persona)" />
-                  <edit-outlined key="edit" @click="showModal(persona)" />
-                  <a-popconfirm
-                    title="确定要删除这个智能体吗？"
-                    @confirm="handleDelete(persona.id)"
+        <a-tabs v-model:activeKey="activeTab" class="persona-tabs">
+          <a-tab-pane key="grid" tab="卡片视图">
+            <a-spin :spinning="personaStore.loading">
+              <div class="persona-grid-container">
+                <div class="persona-grid">
+                  <a-card
+                    v-for="persona in paginatedPersonas"
+                    :key="persona.id"
+                    hoverable
+                    class="persona-card"
                   >
-                    <delete-outlined key="delete" style="color: #ff4d4f" />
-                  </a-popconfirm>
-                </template>
-                <a-card-meta :title="persona.name" :description="persona.title || '暂无头衔'">
-                  <template #avatar>
-                    <a-avatar
-                      :style="{ backgroundColor: getAvatarColor(persona.name) }"
-                      size="large"
-                    >
-                      {{ persona.name[0] }}
-                    </a-avatar>
-                  </template>
-                </a-card-meta>
-                <div class="persona-content">
-                  <p class="bio" :title="persona.bio">{{ persona.bio || '暂无简介' }}</p>
-                  <div class="stance" v-if="persona.stance">
-                    <span class="label">立场:</span> {{ persona.stance }}
-                  </div>
-                  <div class="tags">
-                    <a-tag v-if="persona.is_public" color="green">公开</a-tag>
-                    <a-tag v-else color="blue">私有</a-tag>
-                    <a-tag v-for="tag in persona.theories.slice(0, 2)" :key="tag">{{ tag }}</a-tag>
-                    <a-tag v-if="persona.theories.length > 2">...</a-tag>
-                  </div>
+                    <div class="card-header">
+                      <div class="user-info">
+                        <a-avatar :style="{ backgroundColor: getAvatarColor(persona.name) }" size="large">
+                          {{ persona.name[0] }}
+                        </a-avatar>
+                        <div class="name-title">
+                          <div class="name" :title="persona.name">{{ persona.name }}</div>
+                          <div class="title" :title="persona.title || '暂无头衔'">{{ persona.title || '暂无头衔' }}</div>
+                        </div>
+                      </div>
+                      <div class="actions">
+                        <a-dropdown placement="bottomRight" :trigger="['click']">
+                          <a-button type="text" size="small">
+                            <template #icon><more-outlined /></template>
+                          </a-button>
+                          <template #overlay>
+                            <a-menu>
+                              <a-menu-item key="view" @click="showDetails(persona)">
+                                <eye-outlined /> 查看详情
+                              </a-menu-item>
+                              <a-menu-item key="edit" @click="showModal(persona)">
+                                <edit-outlined /> 编辑
+                              </a-menu-item>
+                              <a-menu-item key="delete">
+                                <a-popconfirm
+                                  title="确定要删除这个智能体吗？"
+                                  @confirm="handleDelete(persona.id)"
+                                >
+                                  <span style="color: #ff4d4f"><delete-outlined /> 删除</span>
+                                </a-popconfirm>
+                              </a-menu-item>
+                            </a-menu>
+                          </template>
+                        </a-dropdown>
+                      </div>
+                    </div>
+
+                    <div class="persona-content">
+                      <p class="bio" :title="persona.bio">{{ persona.bio || '暂无简介' }}</p>
+                      <div class="stance" v-if="persona.stance">
+                        <span class="label">立场:</span> {{ persona.stance }}
+                      </div>
+                      <div class="tags">
+                        <a-tag v-if="persona.is_public" color="green">公开</a-tag>
+                        <a-tag v-else color="blue">私有</a-tag>
+                        <a-tag v-for="tag in persona.theories.slice(0, 2)" :key="tag">{{ tag }}</a-tag>
+                        <a-tag v-if="persona.theories.length > 2">...</a-tag>
+                      </div>
+                    </div>
+                  </a-card>
+                
+                <!-- Empty State -->
+                <div v-if="personaStore.personas.length === 0" class="empty-state">
+                  <a-empty description="暂无智能体，快去创建一个吧" />
                 </div>
-              </a-card>
+              </div>
               
-              <!-- Empty State -->
-              <div v-if="personaStore.personas.length === 0" class="empty-state">
-                <a-empty description="暂无智能体，快去创建一个吧" />
+              <div class="pagination-wrapper" v-if="personaStore.personas.length > 0">
+                <a-pagination
+                  v-model:current="currentPage"
+                  v-model:pageSize="pageSize"
+                  :total="personaStore.personas.length"
+                  :show-size-changer="false"
+                  @change="onPageChange"
+                  align="center"
+                />
               </div>
             </div>
           </a-spin>
@@ -77,6 +107,10 @@
             :data-source="personaStore.personas"
             :loading="personaStore.loading"
             row-key="id"
+            tableLayout="fixed"
+            :scroll="{ x: 1000 }"
+            size="middle"
+            :pagination="{ pageSize: 6, showSizeChanger: false, align: 'center' }"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'bio'">
@@ -216,7 +250,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { usePersonaStore, type Persona } from '@/stores/persona'
 import { message } from 'ant-design-vue'
 import GodAgentModal from '@/components/god/GodAgentModal.vue'
@@ -227,7 +261,8 @@ import {
   DeleteOutlined,
   ThunderboltOutlined,
   EyeOutlined,
-  GlobalOutlined
+  GlobalOutlined,
+  MoreOutlined
 } from '@ant-design/icons-vue'
 
 const personaStore = usePersonaStore()
@@ -239,6 +274,20 @@ const submitting = ref(false)
 const editingId = ref<number | null>(null)
 const activeTab = ref('grid')
 const currentPersona = ref<Persona | null>(null)
+
+// Pagination
+const currentPage = ref(1)
+const pageSize = ref(6)
+
+const paginatedPersonas = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return personaStore.personas.slice(start, end)
+})
+
+const onPageChange = (page: number) => {
+  currentPage.value = page
+}
 
 const columns = [
   { title: '名称', dataIndex: 'name', key: 'name', width: 120 },
@@ -353,14 +402,14 @@ const showRealGodModal = () => {
 .persona-content-wrapper {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .header-title {
@@ -382,13 +431,42 @@ const showRealGodModal = () => {
 
 .persona-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-  padding-bottom: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(200px, 1fr);
+  gap: 16px;
+  padding-bottom: 0;
+  height: 100%;
+}
+
+.persona-grid-container {
+  height: calc(100vh - 280px);
+  display: flex;
+  flex-direction: column;
+}
+
+.pagination-wrapper {
+  margin-top: 16px;
+  padding-top: 0;
+  text-align: center;
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .persona-card {
   transition: all 0.3s;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.persona-card :deep(.ant-card-body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
 }
 
 .persona-card:hover {
@@ -396,9 +474,54 @@ const showRealGodModal = () => {
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.name-title {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(0,0,0,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title {
+  font-size: 12px;
+  color: rgba(0,0,0,0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
 .persona-content {
-  margin-top: 16px;
-  height: 100px;
+  margin-top: 0;
+  flex: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -413,6 +536,7 @@ const showRealGodModal = () => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   margin-bottom: 8px;
+  min-height: 0;
 }
 
 .stance {
@@ -422,11 +546,7 @@ const showRealGodModal = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.stance .label {
-  font-weight: 500;
-  color: rgba(0,0,0,0.85);
+  flex-shrink: 0;
 }
 
 .tags {
@@ -434,6 +554,7 @@ const showRealGodModal = () => {
   flex-wrap: nowrap;
   gap: 4px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .tags :deep(.ant-tag) {
@@ -455,6 +576,8 @@ const showRealGodModal = () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  width: 100%;
+  display: block;
 }
 
 .table-tags {
@@ -462,5 +585,15 @@ const showRealGodModal = () => {
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.table-tags :deep(.ant-tag) {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 </style>

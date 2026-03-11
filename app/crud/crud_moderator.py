@@ -47,7 +47,7 @@ def get_moderators(db, skip: int = 0, limit: int = 100, creator_id: Optional[int
     if mods:
         # Serialize list of RowObjects to list of dicts
         mods_data = [m.__dict__ for m in mods]
-        cache_service.set_cache(cache_key, mods_data, expire=60) # Short TTL for lists
+        cache_service.set_cache(cache_key, mods_data, expire=300) # Increased TTL to 5 minutes
         
     return mods
 
@@ -72,6 +72,8 @@ def create_moderator(db, moderator: ModeratorCreate, creator_id: int):
     if new_mod:
         # Update specific cache
         cache_service.set_cache(moderator_cache_key(new_mod.id), new_mod.__dict__, expire=3600)
+        # Invalidate list cache
+        cache_service.delete_keys_pattern("moderators:list:*")
         
     return new_mod
 
@@ -80,6 +82,7 @@ def delete_moderator(db, moderator_id: int):
     mod = get_moderator(db, moderator_id) # This might use cache, which is fine
     if mod:
         db_execute_commit(db, "DELETE FROM moderators WHERE id = ?", [moderator_id])
-        # Invalidate cache
+        # Invalidate specific and list cache
         cache_service.delete_cache(moderator_cache_key(moderator_id))
+        cache_service.delete_keys_pattern("moderators:list:*")
     return mod

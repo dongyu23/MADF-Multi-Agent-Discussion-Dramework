@@ -227,6 +227,10 @@ class ForumScheduler:
                 participants_db = get_forum_participants(db, forum_id)
                 
                 moderator_db = forum.moderator
+                
+                # OPTIMIZATION: Cache participants/moderator info in memory to avoid repeated DB reads in loop
+                # We already do this by creating `participants` list.
+                # But we re-read forum status/messages every loop.
             
             # Setup Agents (in memory)
             participants = []
@@ -331,9 +335,14 @@ class ForumScheduler:
 
                 # 2. Reconstruct Context (Shared Memory)
                 # We need messages.
+                # OPTIMIZATION: Only fetch last N messages if memory grows too large.
+                # But SharedMemory might need full history? 
+                # Let's trust get_forum_messages to be fast enough or add limit.
                 with self._get_db() as db:
                     messages = get_forum_messages(db, forum_id)
                 
+                # OPTIMIZATION: Move SharedMemory reconstruction to background or only append new?
+                # For now, it's fast enough.
                 shared_memory = SharedMemory(n_participants)
                 if forum.summary_history:
                     summaries = forum.summary_history
@@ -359,6 +368,14 @@ class ForumScheduler:
                             agent.private_memory.add_speech(m.content)
 
                 # 3. Check Summary
+                # OPTIMIZATION: Check summary ASYNC? Or just skip if not needed.
+                # Summary generation can take time (LLM call).
+                # Move summary to background task? 
+                # Yes, but "moderator speaks" is blocking the flow usually.
+                # If we make it non-blocking, the agents might continue speaking while mod is summarizing.
+                # That might be confusing. 
+                # Let's keep it blocking for now but only trigger when strictly necessary.
+                
                 msg_count = len(messages)
                 N_WINDOW = 20
                 
@@ -366,6 +383,9 @@ class ForumScheduler:
                     if msg_count > 0 and msg_count % N_WINDOW == 0:
                         last_msg = messages[-1]
                         if last_msg.speaker_name != moderator.name:
+                             # Check if we already have a summary for this window? 
+                             # (implied by turn count check)
+                             
                             logger.info(f"Forum {forum_id} triggering summary (msg count {msg_count}).")
                             msgs_to_summarize = messages[-N_WINDOW:]
                             await self._moderator_speak(forum_id, moderator, "periodic_summary", messages=msgs_to_summarize, ablation_flags=ablation_flags)
@@ -383,8 +403,14 @@ class ForumScheduler:
                 speaker = None
                 thoughts_map = {}
                 
+                # OPTIMIZATION: If we already have a queue, maybe we don't need everyone to think?
+                # But current logic requires everyone to think to update their internal state or react.
+                # However, to speed up, we can start the NEXT speaker's preparation earlier?
+                # No, because context depends on the previous speaker's FULL message.
+                
                 # Everyone thinks
-                await self._broadcast_system_log(forum_id, "所有参与者正在思考中...", "info")
+                # Reduce log noise
+                # await self._broadcast_system_log(forum_id, "所有参与者正在思考中...", "info")
                 logger.info(f"Forum {forum_id}: Agents start thinking...")
                 
                 async def agent_think(ag):
@@ -416,88 +442,109 @@ class ForumScheduler:
                         return ag, None
 
                 # Execute thinking in parallel - NO DB LOCK HELD HERE
+                # Prefetch next speaker logic? No, we don't know who speaks until they think.
+                # Optimization: Don't wait for ALL to think if we just need ONE to speak?
+                # But we need everyone to decide "action".
+                # Current bottleneck: waiting for the SLOWEST thinker.
+                # Optimization: Set a timeout? Or just let them be.
+                # Let's keep full gather for fairness, but maybe optimize the gap after thinking.
+                
+                # OPTIMIZATION: Use asyncio.wait for first_completed if we have a queue?
+                # No, we need to know if anyone ELSE wants to speak urgently.
+                # But we can update the UI *as soon as* someone decides.
+                
+                # think_results = await asyncio.gather(*[agent_think(p) for p in participants])
+                
+                # New Logic: Use asyncio.as_completed to process thoughts as they arrive?
+                # But we need to collect ALL results to make a fair decision if multiple apply.
+                # However, we can process the DB updates in parallel.
+                
+                # Reduce timeout risk
+                # If someone thinks too long, should we skip?
+                # For now, no.
+                
                 think_results = await asyncio.gather(*[agent_think(p) for p in participants])
                     
                 logger.info(f"Forum {forum_id}: Agents finished thinking.")
                 
                 # Process thoughts (need DB to save thoughts)
-                with self._get_db() as db:
-                    # Refresh participants info to get latest thought history?
-                    # Or just assume we have IDs correct. We have IDs from init.
-                    # But we need to fetch current history to append.
-                    # This is inefficient (read-modify-write).
-                    # Better: update_forum_participant should append or we read first.
-                    # Let's read first.
-                    participants_db_fresh = get_forum_participants(db, forum_id)
-                    
-                    for agent, thought in think_results:
-                        if thought:
-                            thoughts_map[agent] = thought
-                            if thought.get('action') == 'apply_to_speak':
-                                if agent not in speaker_queue:
-                                    if agent in batch_spoken_agents and speaker_queue:
-                                        pass
-                                    else:
-                                        speaker_queue.append(agent)
-                            
-                            p_db = next((p for p in participants_db_fresh if p.persona.name == agent.name), None)
-                            if p_db:
-                                 current_hist = []
-                                 if hasattr(p_db, 'thoughts_history'):
-                                     if isinstance(p_db.thoughts_history, str):
-                                         import json
-                                         try:
-                                             current_hist = json.loads(p_db.thoughts_history)
-                                         except:
-                                             pass
-                                     elif isinstance(p_db.thoughts_history, list):
-                                         current_hist = p_db.thoughts_history
-                                         
-                                 new_thoughts = current_hist + [thought]
-                                 update_forum_participant(db, forum_id, p_db.persona_id, thoughts_history=new_thoughts)
+                # Optimization: Do this ASYNC or in background if possible?
+                # We need to know who speaks to proceed.
+                # But saving history can be done in parallel with speaking start?
+                # No, we need consistency.
+                # Let's optimize the DB access pattern.
+                
+                # We can prepare the next speaker IMMEDIATELY after deciding, 
+                # while saving thoughts in background.
+                
+                speaker_candidates = []
+                # Simple in-memory processing first
+                for agent, thought in think_results:
+                    if thought:
+                        thoughts_map[agent] = thought
+                        if thought.get('action') == 'apply_to_speak':
+                             speaker_candidates.append(agent)
 
-                # --- Queue Logic Refinement ---
-                queue_names = [a.name for a in speaker_queue]
-                if queue_names:
-                    await self._broadcast_system_log(forum_id, f"当前发言队列: {', '.join(queue_names)}", "info")
-                else:
-                    await self._broadcast_system_log(forum_id, "当前发言队列为空，准备进入随机指派模式...", "info")
+                # Update Queue (In-Memory)
+                for agent in speaker_candidates:
+                    if agent not in speaker_queue:
+                         if agent not in batch_spoken_agents or not speaker_queue:
+                             speaker_queue.append(agent)
 
+                # Select Speaker (In-Memory)
                 if speaker_queue:
                     speaker = speaker_queue.pop(0)
                     batch_spoken_agents.add(speaker)
-                    await self._broadcast_system_log(forum_id, f"队列调度: [{speaker.name}] 获得发言权", "info")
                 elif participants:
                     remaining = [p for p in participants if p not in batch_spoken_agents]
                     if remaining:
                         speaker = remaining[0]
-                        await self._broadcast_system_log(forum_id, f"随机指派(优先未发言): [{speaker.name}]", "info")
                     else:
                         batch_spoken_agents.clear()
                         speaker = participants[fallback_speaker_idx % len(participants)]
                         fallback_speaker_idx += 1
-                        await self._broadcast_system_log(forum_id, f"随机指派(轮询): [{speaker.name}]", "info")
-                    
                     batch_spoken_agents.add(speaker)
                 
-                if not speaker_queue:
-                    if len(batch_spoken_agents) >= len(participants):
-                        batch_spoken_agents.clear()
+                # Fire and forget DB updates for thoughts (using create_task)
+                # This removes the DB write latency from the critical path of "Next Speaker"
+                async def save_thoughts_bg(results, f_id):
+                    with self._get_db() as db:
+                        # Re-fetch only if needed, or pass IDs.
+                        # We need persona_id. We can cache it or fetch once.
+                        parts = get_forum_participants(db, f_id)
+                        p_map = {p.persona.name: p for p in parts}
+                        
+                        for ag, th in results:
+                            if not th: continue
+                            p_db = p_map.get(ag.name)
+                            if p_db:
+                                current = []
+                                if p_db.thoughts_history:
+                                    try:
+                                        if isinstance(p_db.thoughts_history, str):
+                                            current = json.loads(p_db.thoughts_history)
+                                        elif isinstance(p_db.thoughts_history, list):
+                                            current = p_db.thoughts_history
+                                    except: pass
+                                update_forum_participant(db, f_id, p_db.persona_id, thoughts_history=current + [th])
+                
+                asyncio.create_task(save_thoughts_bg(think_results, forum_id))
+
+                # --- Queue Logic Refinement ---
+                # Broadcasting logs is fast (Redis/WS), keep it.
+                queue_names = [a.name for a in speaker_queue]
+                if queue_names:
+                    await self._broadcast_system_log(forum_id, f"当前发言队列: {', '.join(queue_names)}", "info")
                 
                 if speaker:
-                    thought = thoughts_map.get(speaker)
-                    if not thought:
-                         thought = {
-                            "focus": "系统指派", 
-                            "attitude": "中立", 
-                            "analysis": "无",
-                            "action": "listen",
-                            "previous": "无",
-                            "mind": "无",
-                            "benefit": "无"
-                        }
+                    await self._broadcast_system_log(forum_id, f"下一位发言: [{speaker.name}]", "info")
+                    thought = thoughts_map.get(speaker) or {}
                     
-                    await self._broadcast_system_log(forum_id, f"嘉宾 [{speaker.name}] 正在准备发言...", "info")
+                    # PRE-FETCH / WARM-UP logic could go here if we had a streaming API that supports it.
+                    # For now, just start speaking immediately.
+                    
+                    # Log optimization
+                    # await self._broadcast_system_log(forum_id, f"嘉宾 [{speaker.name}] 正在准备发言...", "info")
                     
                     await self._agent_speak(forum_id, speaker, thought, context_str, ablation_flags=ablation_flags)
                 
@@ -534,12 +581,16 @@ class ForumScheduler:
             forum = get_forum(db, forum_id)
             moderator_id = forum.moderator_id
         
-        await self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 正在构思...", "info")
+        # await self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 正在构思...", "info")
         try:
             if ablation_flags.get("mock_llm"):
                 await asyncio.sleep(1)
                 gen = self._mock_stream_generator(f"Mock moderator speech for {action} on topic {forum.topic}...")
             elif action == "opening":
+                # Fix: guest object in list is ParticipantAgent, it has .persona dict attribute if we stored it?
+                # No, ParticipantAgent stores persona data in self.title, self.stance etc.
+                # Let's check ParticipantAgent init.
+                # It has self.title, self.stance.
                 guest_list = [{"name": g.name, "title": g.title, "stance": g.stance} for g in guests]
                 gen = await asyncio.to_thread(moderator.opening, guest_list)
             elif action == "closing":
@@ -612,7 +663,9 @@ class ForumScheduler:
             p_db = next((p for p in participants if p.persona.name == agent.name), None)
             persona_id = p_db.persona_id if p_db else None
 
-        await self._broadcast_system_log(forum_id, f"嘉宾 [{agent.name}] 正在构思中...", "info")
+        # Optimization: No need to log "thinking" again if thought is already done.
+        # But we might need to do the actual LLM call for speaking now.
+        
         try:
             if ablation_flags.get("mock_llm"):
                 await asyncio.sleep(1)

@@ -12,26 +12,20 @@
         <span v-if="!collapsed" class="logo-text">MADF 论坛</span>
         <span v-else class="logo-text">M</span>
       </div>
-      <a-menu v-model:selectedKeys="selectedKeys" theme="light" mode="inline">
-        <a-menu-item key="dashboard">
-          <router-link to="/dashboard">
+      <a-menu :selectedKeys="selectedKeys" theme="light" mode="inline">
+        <a-menu-item key="dashboard" @click="navigateTo('/dashboard')">
             <dashboard-outlined />
             <span>概览</span>
-          </router-link>
         </a-menu-item>
         
-        <a-menu-item key="personas">
-          <router-link to="/personas">
+        <a-menu-item key="personas" @click="navigateTo('/personas')">
             <team-outlined />
             <span>智能体工坊</span>
-          </router-link>
         </a-menu-item>
         
-        <a-menu-item key="forums">
-          <router-link to="/forums">
+        <a-menu-item key="forums" @click="navigateTo('/forums')">
             <comment-outlined />
             <span>圆桌论坛</span>
-          </router-link>
         </a-menu-item>
 
         <a-menu-divider />
@@ -73,6 +67,11 @@ const collapsed = ref(false)
 
 const handleLogout = async () => {
   await authStore.logout()
+  router.push('/login')
+}
+
+const navigateTo = (path: string) => {
+    router.push(path)
 }
 
 const selectedKeys = computed(() => {

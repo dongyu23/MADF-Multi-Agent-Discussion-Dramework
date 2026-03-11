@@ -1,6 +1,6 @@
 <template>
   <div class="chat-area" ref="chatAreaRef">
-    <div v-if="loading" class="loading-state">
+    <div v-if="loading && messages.length === 0" class="loading-state">
       <a-spin tip="加载消息记录..." />
     </div>
     
@@ -60,12 +60,20 @@ defineExpose({ scrollToBottom })
   background: #f5f5f5;
   padding: 24px;
   overflow-y: auto;
+  position: relative; /* Create stacking context for loading overlay */
+  z-index: 1; /* Lower than header */
 }
 
 .loading-state {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
+  background: rgba(255, 255, 255, 0.8);
+  z-index: 10;
 }
 </style>

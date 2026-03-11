@@ -10,8 +10,13 @@
       </a-button>
     </div>
 
-    <a-spin :spinning="forumStore.loading">
-      <div class="forum-grid">
+    <a-spin :spinning="forumStore.loading && forumStore.forums.length === 0">
+      <div v-if="forumStore.loading && forumStore.forums.length === 0" class="forum-grid">
+        <a-card v-for="i in 6" :key="i" class="forum-card">
+          <a-skeleton active :paragraph="{ rows: 2 }" />
+        </a-card>
+      </div>
+      <div v-else class="forum-grid">
         <a-card
           v-for="item in forumStore.forums"
           :key="item.id"
@@ -60,7 +65,7 @@
           </div>
         </a-card>
         
-        <div v-if="forumStore.forums.length === 0" class="empty-state">
+        <div v-if="forumStore.forums.length === 0 && !forumStore.loading" class="empty-state">
           <a-empty description="暂无正在进行的论坛，发起一个新的话题吧" />
         </div>
       </div>
@@ -202,8 +207,11 @@ const getAvatarColor = (topic: string) => {
 }
 
 const showModal = async () => {
-  await forumStore.fetchModerators()
-  visible.value = true
+  visible.value = true // Open modal immediately for better UX
+  // Load data in background
+  forumStore.fetchModerators()
+  personaStore.fetchPersonas() // Ensure personas are also loaded
+  
   formState.topic = ''
   formState.participant_ids = []
   formState.moderator_id = undefined
@@ -236,16 +244,14 @@ const handleOk = async () => {
 }
 
 const handleDelete = async (id: number) => {
-    forumStore.loading = true
+    // No loading spinner for optimistic delete to keep UI snappy
+    // forumStore.loading = true 
     try {
         await forumStore.deleteForum(id)
-        await forumStore.fetchForums()
         message.success('删除成功')
     } catch (e: any) {
         console.error(e)
         message.error(e.message || '删除失败')
-    } finally {
-        forumStore.loading = false
     }
 }
 </script>

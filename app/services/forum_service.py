@@ -55,14 +55,30 @@ class ForumService:
     async def delete_forum(self, forum_id: int, user_id: int, is_admin: bool = False):
         forum = get_forum(self.db, forum_id)
         if not forum:
-            raise HTTPException(status_code=404, detail="Forum not found")
+            # If not found, maybe already deleted, return True to be idempotent
+            return True
             
         if forum.creator_id != user_id and not is_admin:
             raise HTTPException(status_code=403, detail="Not authorized")
         
         # Stop any running tasks for this forum first
-        await scheduler.stop_forum(forum_id)
+        try:
+            await scheduler.stop_forum(forum_id)
+        except Exception as e:
+            # Log error but proceed with deletion
+            import logging
+            logging.getLogger(__name__).error(f"Error stopping forum {forum_id} before delete: {e}")
+            
+        # Clear cache related to this forum
+        try:
+            from app.core.cache import cache_service
+            cache_service.delete_keys_pattern(f"forums:list:{user_id}:*")
+            # If forum has participants, clear their cache if needed? No, participant list cache isn't global.
+        except:
+            pass
         
+        # Ensure we use a new transaction/connection for deletion if needed, 
+        # but self.db is injected.
         return delete_forum(self.db, forum_id)
 
     async def post_message(self, forum_id: int, msg_in: MessageCreate):

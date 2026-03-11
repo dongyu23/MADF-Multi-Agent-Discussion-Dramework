@@ -72,6 +72,8 @@ def list_forums(
 ):
     # Cache Aside
     cache_key = forum_list_cache_key(current_user.id, skip, limit)
+    # Increased TTL to 30s to balance responsiveness and DB load
+    # Invalidation is handled by create/delete endpoints
     cached_data = cache_service.get_cache(cache_key)
     if cached_data:
         # Reconstruct RowObjects from dicts isn't strictly necessary for Pydantic response,
@@ -103,7 +105,7 @@ def list_forums(
     # Cache Write
     # Serialize to dicts
     forums_data = obj_to_dict(forums)
-    cache_service.set_cache(cache_key, forums_data, expire=10) # Short TTL (10s) to keep UI responsive but reduce DB load
+    cache_service.set_cache(cache_key, forums_data, expire=30) # Increased TTL to 30s
     
     return forums
 
