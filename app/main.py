@@ -84,32 +84,51 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Serve Frontend Static Files
-# In Docker/Production, we build the frontend and put it in frontend/dist
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+# In Docker/Production, we build the frontend and put it in /app/frontend/dist (as per Dockerfile)
+# Or ./frontend/dist relative to app root?
+# Dockerfile copies frontend/dist to /app/frontend/dist
+# But WORKDIR is /app
+# So path is ./frontend/dist
+# Let's be robust
+base_dir = os.path.dirname(os.path.abspath(__file__)) # /app/app
+root_dir = os.path.dirname(base_dir) # /app
+frontend_dist = os.path.join(root_dir, "frontend", "dist")
 
-if os.path.exists(frontend_path):
-    # Mount assets and other static files
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+if not os.path.exists(frontend_dist):
+    # Try alternate location if running locally not in docker
+    frontend_dist = os.path.join(root_dir, "..", "frontend", "dist")
+
+logger.info(f"Frontend dist path: {frontend_dist}, exists: {os.path.exists(frontend_dist)}")
+
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
     
-    # Catch-all for SPA routing: serve index.html for all non-API routes
-    @app.get("/{path_name:path}")
-    async def serve_frontend(path_name: str):
-        # Skip API routes and common asset patterns
-        if path_name.startswith("api") or "." in path_name:
-             # If it's a file but not found, let it 404
-             file_path = os.path.join(frontend_path, path_name)
-             if os.path.exists(file_path):
-                 return FileResponse(file_path)
-             return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    # Catch-all for SPA routing
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # API requests are handled by router above (order matters? No, this is catch-all)
+        # But include_router is already added.
+        if full_path.startswith("api"):
+             return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
         
-        return FileResponse(os.path.join(frontend_path, "index.html"))
+        # Check if file exists (e.g. favicon.ico)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Fallback to index.html for client-side routing
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+            
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
 @app.get("/")
 def root():
-    # If frontend exists, serve it, otherwise serve API welcome
-    if os.path.exists(frontend_path):
-        return FileResponse(os.path.join(frontend_path, "index.html"))
-    return {"message": "Welcome to MADF API", "docs": "/docs"}
+    index_path = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Welcome to MADF API. Frontend not found.", "docs": "/docs"}
 
 if __name__ == "__main__":
     import uvicorn

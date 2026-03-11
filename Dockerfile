@@ -1,9 +1,17 @@
 # Stage 1: Build the frontend
 FROM node:18-alpine AS frontend-builder
 WORKDIR /app/frontend
+
+# Copy only package files first for better caching
 COPY frontend/package*.json ./
+
+# Install dependencies
 RUN npm install
+
+# Copy source code
 COPY frontend/ .
+
+# Build frontend
 RUN npm run build
 
 # Stage 2: Final image
@@ -13,11 +21,15 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
-# Install runtime dependencies for building some Python packages if needed
-# RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Configure pip mirror for faster downloads (optional, kept as per original Dockerfile)
+# Configure pip mirror for faster downloads
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Copy requirements file and install dependencies
@@ -30,8 +42,8 @@ COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 # Copy the rest of the application code
 COPY . .
 
-# Ensure the database is initialized or migrations are run (if using SQLite)
-# CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Create data directory
+RUN mkdir -p /app/data
 
 # Expose the port
 EXPOSE 8000

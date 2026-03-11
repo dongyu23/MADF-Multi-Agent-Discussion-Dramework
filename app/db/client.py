@@ -135,14 +135,21 @@ class Database:
             if db_dir and not os.path.exists(db_dir):
                 try:
                     os.makedirs(db_dir, exist_ok=True)
+                    logger.info(f"Created database directory: {db_dir}")
                 except OSError as e:
                     logger.warning(f"Failed to create database directory: {e}")
 
         # 使用 create_client_sync 创建连接
-        client = libsql_client.create_client_sync(
-            url=self.url,
-            auth_token=token
-        )
+        # LibSQL client automatically creates the file if it doesn't exist for local file URLs
+        try:
+            client = libsql_client.create_client_sync(
+                url=self.url,
+                auth_token=token
+            )
+        except Exception as e:
+            logger.error(f"Failed to create database client: {e}")
+            # Fallback or retry logic could go here, but for now just re-raise
+            raise e
         
         # --- SQLite WAL 模式与性能优化 ---
         if not self.is_remote and not self.is_postgres:

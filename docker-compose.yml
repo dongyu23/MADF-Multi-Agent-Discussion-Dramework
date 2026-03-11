@@ -11,11 +11,33 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=file:/app/data/madf.db
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     env_file:
       - .env
     volumes:
       - madf_data:/app/data
+    depends_on:
+      - redis
     restart: always
+    networks:
+      - madf-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: madf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+    networks:
+      - madf-network
+
+networks:
+  madf-network:
+    driver: bridge
 
 volumes:
   madf_data:
+  redis_data:
