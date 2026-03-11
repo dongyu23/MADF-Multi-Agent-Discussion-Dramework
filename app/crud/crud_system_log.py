@@ -1,8 +1,9 @@
 from app.schemas.system_log import SystemLogCreate
-from app.db.client import fetch_one, fetch_all
+from app.db.client import fetch_one, fetch_all, db_execute_commit
 
 def create_system_log(db, log: SystemLogCreate):
-    rs = db.execute(
+    rs = db_execute_commit(
+        db,
         """
         INSERT INTO system_logs (forum_id, level, source, content)
         VALUES (?, ?, ?, ?)

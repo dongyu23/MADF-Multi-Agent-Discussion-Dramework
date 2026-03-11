@@ -2,10 +2,12 @@
   <a-modal
     v-model:open="visible"
     title="上帝模式：创造真实智能体 (联网版)"
-    :width="900"
+    width="1000px"
     :footer="null"
     @cancel="handleCancel"
     class="god-agent-modal"
+    :bodyStyle="{ padding: 0, height: '80vh' }"
+    centered
   >
     <div class="god-agent-container">
       <div class="chat-window" ref="chatWindowRef">
@@ -114,12 +116,15 @@
       <div class="input-area">
         <a-textarea
           v-model:value="input"
-          placeholder="描述您想要创建的真实人物或基于现实的角色（例如：寻找一位精通量子力学的现代物理学家...）"
+          placeholder="描述您想要创建的真实人物... (Enter 发送, Shift+Enter 换行)"
           :auto-size="{ minRows: 2, maxRows: 4 }"
+          @keydown.enter.exact.prevent="handleSend"
           @keydown.ctrl.enter.prevent="handleSend"
           :disabled="loading"
+          class="custom-textarea"
         />
         <a-button type="primary" class="send-btn" @click="handleSend" :loading="loading">
+          <template #icon><send-outlined /></template>
           发送
         </a-button>
       </div>
@@ -132,6 +137,7 @@ import { ref, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePersonaStore } from '@/stores/persona'
+import { SendOutlined } from '@ant-design/icons-vue'
 
 interface MessageItem {
   type: 'text' | 'thought' | 'search' | 'persona' | 'error' | 'status'
@@ -261,8 +267,6 @@ const handleSend = async () => {
             
             if (event.type === 'count') {
                 totalToGenerate.value = event.content
-                // Only show text if it's meaningful, or just skip pushing a separate bubble
-                // items.push({ type: 'text', content: `准备生成 ${totalToGenerate.value} 位真实角色...` })
                 
             } else if (event.type === 'thought_start') {
                 // High level status update
@@ -323,7 +327,26 @@ const handleSend = async () => {
                 let searchItem = [...items].reverse().find(i => i.type === 'search' && i.status === 'loading')
                 if (searchItem) {
                     searchItem.status = 'done'
-                    searchItem.result = event.content
+                    // Fix: Clean up observation content if it contains raw JSON string artifacts
+                    let cleanContent = event.content;
+                    // Check if content looks like a JSON string dump (starts with " and ends with ")
+                    // and try to parse it if it's double encoded
+                    if (typeof cleanContent === 'string') {
+                        // Remove potential surrounding quotes and unescape
+                        // But simple approach: just display it. Pre tag handles formatting.
+                        // If user complains about specific artifacts like "[ \n " \n \", handle them:
+                        if (cleanContent.startsWith('[\n "') || cleanContent.startsWith('["')) {
+                             try {
+                                 const parsed = JSON.parse(cleanContent);
+                                 if (Array.isArray(parsed)) {
+                                     cleanContent = parsed.join('\n');
+                                 }
+                             } catch (e) {
+                                 // ignore
+                             }
+                        }
+                    }
+                    searchItem.result = cleanContent
                 } else {
                     // Fallback
                     items.push({ type: 'text', content: `[Observation] ${event.content}` })
@@ -379,18 +402,19 @@ watch(visible, (newVal) => {
 .god-agent-container {
   display: flex;
   flex-direction: column;
-  height: 600px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 .chat-window {
   flex: 1;
-  padding: 16px;
+  padding: 20px;
   overflow-y: auto;
-  background: #f0f2f5;
+  background: #f5f7f9;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  border-radius: 4px;
+  gap: 20px;
 }
 
 .message-item {
@@ -422,10 +446,10 @@ watch(visible, (newVal) => {
 }
 
 .bubble {
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 12px 16px;
+  border-radius: 12px 12px 12px 0;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -435,15 +459,18 @@ watch(visible, (newVal) => {
 .user-bubble {
   background: #1890ff;
   color: #fff;
-  border-radius: 8px 0 8px 8px;
+  border-radius: 12px 12px 0 12px;
+  box-shadow: 0 2px 6px rgba(24, 144, 255, 0.2);
 }
 
 .thought-bubble {
-  background: #f8f9fa;
-  border: 1px dashed #d9d9d9;
-  color: #666;
+  background: #fafafa;
+  border: 1px solid #ebebeb;
+  border-left: 4px solid #faad14;
+  color: #555;
   font-size: 13px;
   width: 100%;
+  border-radius: 8px;
 }
 
 .thought-header {
@@ -455,10 +482,10 @@ watch(visible, (newVal) => {
 }
 
 .search-block {
-  background: #e6f7ff;
-  border: 1px solid #91d5ff;
-  border-radius: 6px;
-  padding: 8px 12px;
+  background: #f0faff;
+  border: 1px solid #bae7ff;
+  border-radius: 8px;
+  padding: 10px 14px;
   width: 100%;
   font-size: 13px;
 }
@@ -505,13 +532,14 @@ watch(visible, (newVal) => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #e6f7ff;
-  border: 1px solid #1890ff;
-  padding: 4px 12px;
-  border-radius: 16px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  padding: 6px 16px;
+  border-radius: 20px;
   font-size: 13px;
-  color: #1890ff;
+  color: #52c41a;
   font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
 
 .loading {
@@ -522,6 +550,15 @@ watch(visible, (newVal) => {
 .persona-card {
   width: 100%;
   margin-bottom: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border: 1px solid #f0f0f0;
+}
+
+.persona-card :deep(.ant-card-head) {
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .persona-bio {
@@ -542,15 +579,34 @@ watch(visible, (newVal) => {
 }
 
 .input-area {
-  padding: 16px 0 0 0;
-  background: #fff;
+  padding: 16px;
   display: flex;
   gap: 12px;
   align-items: flex-end;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 0;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.custom-textarea {
+  border-radius: 8px;
+  resize: none;
+  padding: 8px 12px;
+  transition: all 0.3s;
+}
+
+.custom-textarea:hover, .custom-textarea:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .send-btn {
-  height: auto;
-  padding: 8px 24px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>

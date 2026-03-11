@@ -144,23 +144,43 @@ class RealGodAgent:
 
     def _call_llm(self, messages: List[Dict[str, str]], stream: bool = True) -> Generator[Dict[str, Any], None, str]:
         """Helper to call LLM and yield events."""
-        # Increase timeout to 60s for better stability
-        response_stream = get_chat_completion(messages, stream=True, timeout=60)
-        
         full_text = ""
         
-        if not response_stream:
-            yield {"type": "error", "content": "LLM未响应"}
-            return ""
-
-        for chunk in response_stream:
-            if not chunk.choices: continue
-            delta = chunk.choices[0].delta.content or ""
-            if not delta: continue
+        try:
+            # Increase timeout to 60s for better stability
+            # Enable raise_error to catch specific exceptions
+            response_stream = get_chat_completion(messages, stream=True, timeout=60, raise_error=True)
             
-            full_text += delta
-            # Stream raw delta as thought_chunk
-            yield {"type": "thought_chunk", "content": delta}
+            if not response_stream:
+                yield {"type": "error", "content": "LLM未响应 (返回为空)"}
+                return ""
+
+            for chunk in response_stream:
+                if not chunk.choices: continue
+                delta = chunk.choices[0].delta.content or ""
+                if not delta: continue
+                
+                full_text += delta
+                # Stream raw delta as thought_chunk
+                yield {"type": "thought_chunk", "content": delta}
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"LLM Call Error in RealGodAgent: {error_msg}")
+            # Provide more user-friendly error messages for common issues
+            if "401" in error_msg:
+                user_msg = "鉴权失败: API Key 无效或过期"
+            elif "429" in error_msg:
+                user_msg = "请求过于频繁: 达到 API 速率限制"
+            elif "timeout" in error_msg.lower():
+                user_msg = "请求超时: LLM 响应时间过长"
+            elif "connection" in error_msg.lower():
+                user_msg = "网络错误: 无法连接到 LLM 服务"
+            else:
+                user_msg = f"LLM 错误: {error_msg}"
+                
+            yield {"type": "error", "content": user_msg}
+            return ""
 
         return full_text
 
@@ -195,6 +215,7 @@ class RealGodAgent:
 
         # Future for N
         future_n = None
+        executor = None
         
         # 1. Start N determination in background if not provided
         if n is None:
@@ -297,9 +318,15 @@ class RealGodAgent:
                     continue
                     
                 # Execute Action
-                if "Search" in action:
+                if action.startswith("Search") or "Search[" in action:
                     tool_name, query = self._parse_action(action)
-                    
+                    if not query:
+                        # Parsing failed or empty
+                        obs = "系统提示：无法解析搜索关键词。请使用格式：Action: Search[关键词]"
+                        yield {"type": "error", "content": obs}
+                        character_history.append({"role": "user", "content": f"Observation: {obs}"})
+                        continue
+
                     # Deduplication Check
                     if query in self.searched_queries:
                         obs = f"系统提示：你已经搜索过 '{query}' 了。请尝试不同的关键词，或者如果信息足够，请直接 Finish。"
@@ -323,7 +350,7 @@ class RealGodAgent:
                     
                     character_history.append({"role": "user", "content": next_user_msg})
 
-                elif "Finish" in action:
+                elif action.startswith("Finish") or "Finish[" in action:
                     json_str = self._parse_action_input(action)
                     
                     # Try to parse JSON
@@ -360,7 +387,7 @@ class RealGodAgent:
             i += 1
             
         # Ensure executor shutdown if it was created
-        if 'executor' in locals():
+        if executor:
             executor.shutdown(wait=False)
 
     def _parse_output(self, text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -377,14 +404,14 @@ class RealGodAgent:
         action_match = re.search(r"Action:\s*(.*?)$", text, re.DOTALL)
         if action_match:
             action = action_match.group(1).strip()
-            # Clean up: sometimes LLM adds explanation after Action, but usually Action is last.
-            # However, Finish[...] might be multiline.
-            pass 
         else:
-            # Fallback: sometimes Action is not at the very end or formatting is loose
+            # Fallback for Finish[...], which might contain nested brackets breaking simple regex
             if "Finish[" in text:
-                 match = re.search(r"(Finish\[.*?\])", text, re.DOTALL)
-                 if match: action = match.group(1)
+                 # Find start of Finish[
+                 start_idx = text.find("Finish[")
+                 # Take everything from there to the end, assuming Action is last
+                 candidate = text[start_idx:].strip()
+                 action = candidate
             elif "Search[" in text:
                  match = re.search(r"(Search\[.*?\])", text, re.DOTALL)
                  if match: action = match.group(1)
@@ -393,6 +420,18 @@ class RealGodAgent:
 
     def _parse_action(self, action_text: str) -> Tuple[Optional[str], Optional[str]]:
         """Parses Tool and Input from Action string."""
+        if action_text.startswith("Finish[") or "Finish[" in action_text:
+            # Find the first 'Finish['
+            start = action_text.find("Finish[")
+            if start == -1: return None, None
+            
+            # Extract content: everything after 'Finish[' until the last ']'
+            # This handles nested JSON brackets correctly
+            content_start = start + len("Finish[")
+            content = action_text[content_start:].rstrip("]")
+            return "Finish", content
+        
+        # Fallback for Search
         match = re.search(r"(\w+)\[(.*?)\]", action_text, re.DOTALL)
         if match:
             return match.group(1), match.group(2)
@@ -400,7 +439,7 @@ class RealGodAgent:
 
     def _parse_action_input(self, action_text: str) -> str:
         """Extracts input from Finish[...] specifically."""
-        match = re.search(r"Finish\[(.*)\]", action_text, re.DOTALL)
-        if match:
-            return match.group(1)
+        tool, content = self._parse_action(action_text)
+        if tool == "Finish" and content:
+            return content
         return ""

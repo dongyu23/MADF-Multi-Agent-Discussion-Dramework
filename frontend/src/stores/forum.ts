@@ -245,6 +245,7 @@ export const useForumStore = defineStore('forum', {
         await request.delete(`/forums/${id}`)
         // Remove locally to update UI immediately
         this.forums = this.forums.filter(f => f.id !== id)
+        // If we are deleting the current forum, clear it
         if (this.currentForum && this.currentForum.id === id) {
              this.currentForum = null
         }

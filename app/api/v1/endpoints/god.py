@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from typing import List, Annotated, Any
 import json
+import logging
 
 from app.db.session import get_db
 from app.schemas import PersonaResponse, GodGenerateRequest, PersonaCreate
@@ -10,6 +11,10 @@ from app.api.deps import get_current_user
 from app.agent.god import God
 from app.agent.real_god import RealGodAgent
 from app.core.async_utils import async_generator_wrapper
+from app.core.cache import cache_service
+from app.services.persona_service import persona_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 god = God()
@@ -35,31 +40,22 @@ def generate_personas(
             
         created_personas = []
         for p_data in generated_data:
-            # Create Pydantic model from dict
+            # Use unified service
             try:
-                # Ensure theories is a list of strings
-                if isinstance(p_data.get('theories'), str):
-                     # This shouldn't happen if parse_json_from_response works correctly, but safety first
-                     import json
-                     try:
-                        p_data['theories'] = json.loads(p_data['theories'])
-                     except:
-                        p_data['theories'] = []
-                
-                persona_create = PersonaCreate(**p_data)
-                
-                # If user is admin/god, maybe set is_public=True? Default to False for safety
-                persona_create.is_public = False 
-                
-                # Save to DB
-                db_persona = create_persona(db=db, persona=persona_create, owner_id=current_user.id)
-                created_personas.append(db_persona)
+                saved_p = persona_service.save_generated_persona(current_user.id, p_data, db=db)
+                if saved_p:
+                    created_personas.append(saved_p)
+                else:
+                    logger.error(f"Failed to save persona: {p_data.get('name')}")
             except Exception as e:
-                print(f"Error saving generated persona: {e}")
+                logger.error(f"Error saving persona: {e}")
                 continue
                 
         if not created_personas:
              raise HTTPException(status_code=500, detail="Failed to save any generated personas")
+        
+        # No need to invalidate cache here, service does it per persona, but doing it again is harmless
+        # cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
              
         return created_personas
         
@@ -89,26 +85,14 @@ async def generate_real_personas(
         rows = fetch_all(rs)
         db_existing_names = [r.name for r in rows if hasattr(r, 'name')]
     except Exception as e:
-        print(f"Error fetching existing names: {e}")
+        logger.error(f"Error fetching existing names: {e}")
         db_existing_names = []
 
     async def event_generator():
         try:
-            # Delegate loop control to RealGodAgent
-            # Pass user prompt, let agent determine N (pass None)
-            # Pass db_existing_names
             generated_names_in_session = []
             
-            # Run the agent
-            # Note: agent.run is a synchronous generator. To avoid blocking the event loop for too long,
-            # we should iterate it. If individual steps are slow (network calls), they will block.
-            # Ideally, we run this in a thread, but for simplicity with StreamingResponse, 
-            # direct iteration is often acceptable if concurrency isn't massive.
-            # Or we can use run_in_threadpool if we restructure agent.run.
-            # For now, we iterate directly as it yields frequently.
-            
             # Use n=None to allow the agent to auto-detect count from prompt
-            # But respect request.n if it is > 1 (explicitly set)
             target_n = request.n if request.n > 1 else None
             
             async for event in async_generator_wrapper(agent.run(request.prompt, n=target_n, generated_names=generated_names_in_session, db_existing_names=db_existing_names)):
@@ -116,7 +100,7 @@ async def generate_real_personas(
                 # If result, save to DB
                 if event["type"] == "result":
                     personas_data = event["content"]
-                    saved_personas = []
+                    saved_personas_dicts = []
                     
                     # Ensure it's a list
                     if isinstance(personas_data, dict):
@@ -127,34 +111,51 @@ async def generate_real_personas(
                         if p_data.get('name'):
                             generated_names_in_session.append(p_data['name'])
                         
+                        # Use unified service
                         try:
-                            if isinstance(p_data.get('theories'), str):
-                                try:
-                                    p_data['theories'] = json.loads(p_data['theories'])
-                                except:
-                                    p_data['theories'] = []
+                            # Log debug info
+                            msg_content = f"正在保存角色: {p_data.get('name')}..."
+                            yield f"data: {json.dumps({'type': 'status', 'content': msg_content}, ensure_ascii=False)}\n\n"
                             
-                            persona_create = PersonaCreate(**p_data)
-                            persona_create.is_public = False
+                            saved_p = persona_service.save_generated_persona(user_id, p_data, db=db)
                             
-                            db_persona = create_persona(db=db, persona=persona_create, owner_id=user_id)
-                            
-                            # Convert to dict for JSON serialization
-                            saved_personas.append({
-                                "id": db_persona.id,
-                                "name": db_persona.name,
-                                "title": db_persona.title,
-                                "bio": db_persona.bio,
-                                "theories": db_persona.theories,
-                                "stance": db_persona.stance,
-                                "system_prompt": db_persona.system_prompt,
-                                "is_public": db_persona.is_public
-                            })
+                            if saved_p:
+                                # Parse theories from JSON string to List if needed
+                                theories_val = saved_p.theories
+                                if isinstance(theories_val, str):
+                                    try:
+                                        theories_val = json.loads(theories_val)
+                                    except:
+                                        theories_val = []
+
+                                # Convert to dict for JSON serialization
+                                saved_dict = {
+                                    "id": saved_p.id,
+                                    "name": saved_p.name,
+                                    "title": saved_p.title,
+                                    "bio": saved_p.bio,
+                                    "theories": theories_val,
+                                    "stance": saved_p.stance,
+                                    "system_prompt": saved_p.system_prompt,
+                                    "is_public": saved_p.is_public
+                                }
+                                saved_personas_dicts.append(saved_dict)
+                                success_msg = f"✅ 角色 {saved_p.name} 保存成功 (ID: {saved_p.id})"
+                                yield f"data: {json.dumps({'type': 'status', 'content': success_msg}, ensure_ascii=False)}\n\n"
+                                
+                                # CRITICAL: Ensure cache is invalidated for the list view
+                                cache_service.delete_keys_pattern(f"personas:list:{user_id}:*")
+                            else:
+                                fail_msg = f"角色 {p_data.get('name')} 保存失败，请查看后台日志"
+                                yield f"data: {json.dumps({'type': 'error', 'content': fail_msg}, ensure_ascii=False)}\n\n"
+                                
                         except Exception as e:
-                            print(f"Error saving real persona: {e}")
+                            logger.error(f"Error saving real persona: {e}")
+                            err_msg = f"保存异常: {str(e)}"
+                            yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
                     
                     # Update content with saved personas (including IDs)
-                    event["content"] = saved_personas
+                    event["content"] = saved_personas_dicts
                 
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             
@@ -163,6 +164,8 @@ async def generate_real_personas(
             yield f"data: {json.dumps({'type': 'thought', 'content': final_msg}, ensure_ascii=False)}\n\n"
                     
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+            logger.error(f"RealGod stream error: {e}")
+            err_msg = f"生成流异常: {str(e)}"
+            yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

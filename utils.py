@@ -21,12 +21,13 @@ client = ZhipuAI(
     base_url=settings.BASE_URL
 )
 
-def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30, callback=None):
+def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30, callback=None, raise_error=False):
     """
     Wrapper for ZhipuAI chat completion with retry logic and timeout.
     
     Args:
         callback: Optional async function(error_msg: str) to report errors to system log
+        raise_error: If True, raise the last exception instead of returning None when all retries fail.
     """
     attempt = 0
     last_error = None
@@ -87,6 +88,10 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
             time.sleep(1 + attempt) # Exponential backoff: 2s, 3s, 4s...
             
     logger.error(f"Chat completion failed after {max_retries} attempts. Last error: {last_error}")
+    
+    if raise_error and last_error:
+        raise last_error
+        
     return None
 
 def parse_json_from_response(content):

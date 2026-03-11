@@ -2,10 +2,12 @@
   <a-modal
     v-model:open="visible"
     title="上帝模式：创造智能体"
-    :width="800"
+    width="1000px"
     :footer="null"
     @cancel="handleCancel"
     class="god-agent-modal"
+    :bodyStyle="{ padding: 0, height: '80vh' }"
+    centered
   >
     <div class="god-agent-container">
       <div class="chat-window" ref="chatWindowRef">
@@ -157,18 +159,19 @@ watch(visible, (newVal) => {
 .god-agent-container {
   display: flex;
   flex-direction: column;
-  height: 500px;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 .chat-window {
   flex: 1;
-  padding: 16px;
+  padding: 20px;
   overflow-y: auto;
-  background: #f0f2f5;
+  background: #f5f7f9;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  border-radius: 4px;
+  gap: 20px;
 }
 
 .message-item {
@@ -246,11 +249,13 @@ watch(visible, (newVal) => {
 }
 
 .input-area {
-  padding: 16px 0 0 0;
+  padding: 16px;
   background: #fff;
   display: flex;
   gap: 12px;
   align-items: flex-end;
+  border-top: 1px solid #e8e8e8;
+  flex-shrink: 0;
 }
 
 .send-btn {

@@ -1,6 +1,7 @@
 from app.schemas import UserCreate, PersonaCreate, PersonaUpdate, ForumCreate, MessageCreate
 from app.core.hashing import Hasher
-from app.db.client import fetch_one, fetch_all, RowObject, db_transaction
+from app.db.client import fetch_one, fetch_all, RowObject, db_transaction, db_execute_commit
+from app.core.cache import cache_service
 import json
 import logging
 from typing import List, Optional, Any
@@ -8,37 +9,59 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# --- Cache Keys ---
+def user_cache_key(username: str): return f"user:{username}"
+def persona_cache_key(pid: int): return f"persona:{pid}"
+def forum_cache_key(fid: int): return f"forum:{fid}"
+def forum_participants_cache_key(fid: int): return f"forum:{fid}:participants"
+
+# --- User ---
 def get_user_by_username(db, username: str):
+    # Cache Aside: Read
+    cache_key = user_cache_key(username)
+    cached = cache_service.get_cache(cache_key)
+    if cached:
+        return RowObject(cached) # Convert dict back to RowObject-like
+
     rs = db.execute("SELECT * FROM users WHERE username = ?", [username])
-    return fetch_one(rs)
+    user = fetch_one(rs)
+    
+    if user:
+        cache_service.set_cache(cache_key, user.__dict__, expire=3600)
+        
+    return user
 
 def create_user(db: Any, user: UserCreate):
-    # Bcrypt (used by passlib) has a 72-byte limit for passwords.
-    # We truncate it here to avoid ValueError.
-    # We use 71 bytes to be safe.
     password_bytes = user.password.encode('utf-8')
     if len(password_bytes) > 71:
         password_bytes = password_bytes[:71]
     safe_password = password_bytes.decode('utf-8', 'ignore')
     
     try:
+        # Use transaction to ensure commit
         pwd_hash = Hasher.get_password_hash(safe_password)
         created_at = datetime.now()
-        # In PG we rely on RETURNING * which is supported by execute wrapper now
-        rs = db.execute(
+        rs = db_execute_commit(
+            db,
             "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?) RETURNING *",
             [user.username, pwd_hash, user.role, created_at]
         )
-        return fetch_one(rs)
+        new_user = fetch_one(rs)
+            
+        if new_user:
+             cache_service.set_cache(user_cache_key(new_user.username), new_user.__dict__, expire=3600)
+        return new_user
     except Exception as e:
         logger.error(f"Error creating user: {e}")
         raise
 
+# --- Persona ---
 def create_persona(db, persona: PersonaCreate, owner_id: int):
     try:
         theories_json = json.dumps(persona.theories)
         created_at = datetime.now()
-        rs = db.execute(
+        rs = db_execute_commit(
+            db,
             """
             INSERT INTO personas (owner_id, name, title, bio, theories, stance, system_prompt, is_public, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -56,18 +79,30 @@ def create_persona(db, persona: PersonaCreate, owner_id: int):
                 created_at
             ]
         )
-        return fetch_one(rs)
+        new_persona = fetch_one(rs)
+            
+        # Cache Aside: Don't set cache on create. Let the first read populate it.
+        # This ensures strict adherence to "DB is source of truth" and lazy loading.
+        
+        return new_persona
     except Exception as e:
         logger.error(f"Error creating persona: {e}")
         raise
 
 def get_persona(db, persona_id: int):
+    cache_key = persona_cache_key(persona_id)
+    cached = cache_service.get_cache(cache_key)
+    if cached:
+        return RowObject(cached)
+
     rs = db.execute("SELECT * FROM personas WHERE id = ?", [persona_id])
-    return fetch_one(rs)
+    persona = fetch_one(rs)
+    if persona:
+        cache_service.set_cache(cache_key, persona.__dict__)
+    return persona
 
 def update_persona(db, persona_id: int, updates: PersonaUpdate):
     try:
-        # Build dynamic update query
         update_data = updates.model_dump(exclude_unset=True)
         if not update_data:
             return get_persona(db, persona_id)
@@ -84,20 +119,45 @@ def update_persona(db, persona_id: int, updates: PersonaUpdate):
         values.append(persona_id)
         query = f"UPDATE personas SET {', '.join(set_clauses)} WHERE id = ? RETURNING *"
         
-        rs = db.execute(query, values)
-        return fetch_one(rs)
+        rs = db_execute_commit(db, query, values)
+        updated = fetch_one(rs)
+        
+        # Sync Strategy: Delete Redis Key on Update
+        if updated:
+            cache_service.delete_cache(persona_cache_key(persona_id))
+            
+        return updated
     except Exception as e:
         logger.error(f"Error updating persona: {e}")
         raise
 
 def delete_persona(db, persona_id: int):
     try:
-        rs = db.execute("DELETE FROM personas WHERE id = ?", [persona_id])
-        return rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
+        # Check if exists first to ensure idempotency and clear error
+        rs_check = db.execute("SELECT id FROM personas WHERE id = ?", [persona_id])
+        if not fetch_one(rs_check):
+            return True # Already deleted or not exists
+
+        with db_transaction(db) as tx:
+            # Cascading deletes should be handled by DB foreign keys, 
+            # but let's be explicit if needed or just execute
+            rs = tx.execute("DELETE FROM personas WHERE id = ?", [persona_id])
+            
+            # FORCE COMMIT
+            if hasattr(tx, 'commit'):
+                tx.commit()
+            elif hasattr(db, 'commit'):
+                db.commit()
+            
+        # Sync Strategy: Delete Redis Key on Delete
+        cache_service.delete_cache(persona_cache_key(persona_id))
+            
+        return True
     except Exception as e:
-        logger.error(f"Error deleting persona: {e}")
+        logger.error(f"Error deleting persona {persona_id}: {e}")
         raise
 
+# --- Forum ---
 def create_forum(db, forum: ForumCreate, creator_id: int):
     try:
         with db_transaction(db) as tx:
@@ -133,28 +193,16 @@ def create_forum(db, forum: ForumCreate, creator_id: int):
                     values.extend([db_forum.id, pid, "[]"])
 
                 if values:
-                    # SQLite 'INSERT OR IGNORE' -> PG 'INSERT ... ON CONFLICT DO NOTHING'
-                    # But since we support both, we need to detect or use standard SQL if possible.
-                    # 'INSERT OR IGNORE' is SQLite specific. PG uses 'ON CONFLICT DO NOTHING'.
-                    # Let's check db type or use a try-catch for duplicates?
-                    # Or use a compatible syntax? No standard syntax for this.
-                    # We can use the db object to check type if we exposed it.
-                    # Assuming PostgresClient handles this replacement? No, we only replaced ? with %s.
-                    # Let's change to standard INSERT and catch error, or assume PG client will replace it?
-                    # No, replace logic is simple string replace.
-                    # Let's use ON CONFLICT if PG, but we are in shared code.
-                    # Workaround: Use a helper or just try-except loop for now?
-                    # Or simply change query based on db type? We don't have db type here easily.
-                    # Actually, we can use "INSERT INTO ... VALUES ... ON CONFLICT DO NOTHING" for PG.
-                    # But SQLite requires "ON CONFLICT" clause support (v3.24+).
-                    # "INSERT OR IGNORE" is safer for SQLite.
-                    # Let's try to detect via a hack or just use "INSERT INTO" and ignore errors?
-                    # Better: "INSERT INTO ... VALUES ... ON CONFLICT (forum_id, persona_id) DO NOTHING"
-                    # This works in SQLite 3.24+ and Postgres 9.5+.
-                    # Let's use this modern syntax.
                     query = f"INSERT INTO forum_participants (forum_id, persona_id, thoughts_history) VALUES {', '.join(placeholders)} ON CONFLICT (forum_id, persona_id) DO NOTHING"
                     tx.execute(query, values)
+            
+            # FORCE COMMIT
+            if hasattr(tx, 'commit'):
+                tx.commit()
+            elif hasattr(db, 'commit'):
+                db.commit()
 
+        # Return full object (will trigger cache set in get_forum)
         return get_forum(db, db_forum.id)
     except Exception as e:
         logger.error(f"Error creating forum: {e}")
@@ -167,32 +215,29 @@ def delete_forum(db, forum_id: int):
             tx.execute("DELETE FROM forum_participants WHERE forum_id = ?", [forum_id])
             tx.execute("DELETE FROM system_logs WHERE forum_id = ?", [forum_id])
             rs = tx.execute("DELETE FROM forums WHERE id = ?", [forum_id])
-            return rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
+            
+            # FORCE COMMIT
+            if hasattr(tx, 'commit'):
+                tx.commit()
+            elif hasattr(db, 'commit'):
+                db.commit()
+                
+            success = rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
+            
+            return success
     except Exception as e:
         logger.error(f"Error deleting forum: {e}")
         raise
 
 def get_forum(db, forum_id: int):
-    # Fetch forum
     rs = db.execute("SELECT * FROM forums WHERE id = ?", [forum_id])
     forum = fetch_one(rs)
     if not forum:
         return None
         
-    # Fetch participants with persona details
-    # We can join here or do separate query. Join is better.
-    # But for simplicity and matching old structure, separate queries are fine too.
-    # Let's do a separate call to populate participants if needed, but get_forum usually needs them.
-    # The Pydantic model `ForumResponse` expects `participants`.
-    
     participants = get_forum_participants(db, forum_id)
-    
-    # We need to attach participants to the forum object for Pydantic to serialize it
-    # RowObject is a wrapper, so we can set attributes.
-    # But RowObject uses __dict__.
     setattr(forum, "participants", participants)
     
-    # Fetch moderator if exists
     if forum.moderator_id:
         mod_rs = db.execute("SELECT * FROM moderators WHERE id = ?", [forum.moderator_id])
         setattr(forum, "moderator", fetch_one(mod_rs))
@@ -219,14 +264,16 @@ def update_forum(db, forum_id: int, summary_history: list = None, status: str = 
             
         values.append(forum_id)
         query = f"UPDATE forums SET {', '.join(set_clauses)} WHERE id = ? RETURNING *"
-        rs = db.execute(query, values)
-        return fetch_one(rs)
+        
+        rs = db_execute_commit(db, query, values)
+        updated = fetch_one(rs)
+        
+        return updated
     except Exception as e:
         logger.error(f"Error updating forum: {e}")
         raise
 
 def get_forum_participants(db, forum_id: int):
-    # Join with personas to get details
     query = """
     SELECT fp.*, p.name as persona_name, p.title as persona_title, p.bio as persona_bio, 
            p.theories as persona_theories, p.stance as persona_stance, 
@@ -241,7 +288,6 @@ def get_forum_participants(db, forum_id: int):
     
     results = []
     for row in rows:
-        # Construct nested persona object
         persona_data = {
             "id": row.persona_id,
             "name": row.persona_name,
@@ -253,7 +299,6 @@ def get_forum_participants(db, forum_id: int):
             "owner_id": row.persona_owner_id,
             "created_at": row.persona_created_at
         }
-        # row is a RowObject, so we can set 'persona' attribute
         setattr(row, "persona", RowObject(persona_data))
         results.append(row)
     return results
@@ -264,7 +309,7 @@ def update_forum_participant(db, forum_id: int, persona_id: int, thoughts_histor
             return None
             
         query = "UPDATE forum_participants SET thoughts_history = ? WHERE forum_id = ? AND persona_id = ? RETURNING *"
-        rs = db.execute(query, [json.dumps(thoughts_history), forum_id, persona_id])
+        rs = db_execute_commit(db, query, [json.dumps(thoughts_history), forum_id, persona_id])
         return fetch_one(rs)
     except Exception as e:
         logger.error(f"Error updating participant: {e}")
@@ -273,7 +318,8 @@ def update_forum_participant(db, forum_id: int, persona_id: int, thoughts_histor
 def create_message(db, message: MessageCreate):
     try:
         timestamp = datetime.now()
-        rs = db.execute(
+        rs = db_execute_commit(
+            db,
             """
             INSERT INTO messages (forum_id, persona_id, moderator_id, speaker_name, content, turn_count, thought, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)

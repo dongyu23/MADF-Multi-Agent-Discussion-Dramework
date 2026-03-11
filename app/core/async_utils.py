@@ -5,11 +5,16 @@ from typing import AsyncGenerator, Generator, TypeVar, Any
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
-async def async_generator_wrapper(sync_gen):
+async def async_generator_wrapper(gen):
     """
     Wrap a synchronous generator into an asynchronous one.
-    This prevents synchronous next() calls from blocking the event loop.
+    Also handles async generators transparently.
     """
+    if hasattr(gen, '__aiter__'):
+        async for item in gen:
+            yield item
+        return
+
     while True:
         try:
             # We must use run_in_executor because next() on sync generator blocks
@@ -19,7 +24,7 @@ async def async_generator_wrapper(sync_gen):
             
             def _next():
                 try:
-                    return next(sync_gen)
+                    return next(gen)
                 except StopIteration:
                     return StopIteration
                 except Exception as e:

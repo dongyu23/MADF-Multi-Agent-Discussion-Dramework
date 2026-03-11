@@ -80,13 +80,25 @@
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'bio'">
-                <span :title="record.bio">{{ record.bio }}</span>
+                <a-tooltip :title="record.bio">
+                  <div class="table-text-ellipsis">{{ record.bio }}</div>
+                </a-tooltip>
               </template>
               <template v-if="column.key === 'stance'">
-                <span :title="record.stance">{{ record.stance }}</span>
+                <a-tooltip :title="record.stance">
+                  <div class="table-text-ellipsis">{{ record.stance }}</div>
+                </a-tooltip>
               </template>
               <template v-if="column.key === 'theories'">
-                <a-tag v-for="tag in record.theories" :key="tag">{{ tag }}</a-tag>
+                <div class="table-tags">
+                  <a-tag v-for="tag in record.theories.slice(0, 2)" :key="tag">{{ tag }}</a-tag>
+                  <a-popover v-if="record.theories.length > 2">
+                    <template #content>
+                      <a-tag v-for="tag in record.theories.slice(2)" :key="tag" style="margin-bottom: 4px;">{{ tag }}</a-tag>
+                    </template>
+                    <a-tag>+{{ record.theories.length - 2 }}</a-tag>
+                  </a-popover>
+                </div>
               </template>
               <template v-if="column.key === 'is_public'">
                 <a-tag :color="record.is_public ? 'green' : 'blue'">
@@ -398,7 +410,7 @@ const showRealGodModal = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   margin-bottom: 8px;
 }
@@ -419,13 +431,36 @@ const showRealGodModal = () => {
 
 .tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
+  overflow: hidden;
+}
+
+.tags :deep(.ant-tag) {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 
 .empty-state {
   grid-column: 1 / -1;
   padding: 48px 0;
   text-align: center;
+}
+
+.table-text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.table-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
 }
 </style>

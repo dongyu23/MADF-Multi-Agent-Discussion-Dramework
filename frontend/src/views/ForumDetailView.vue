@@ -142,8 +142,13 @@ onUnmounted(() => {
 })
 
 const handleDelete = async () => {
-    await forumStore.deleteForum(forumId)
-    router.push('/forums')
+    try {
+        await forumStore.deleteForum(forumId)
+        message.success('论坛已删除')
+        router.push('/forums')
+    } catch (e: any) {
+        message.error('删除失败')
+    }
 }
 
 const handleStart = async () => {

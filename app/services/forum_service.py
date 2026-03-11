@@ -29,7 +29,11 @@ class ForumService:
 
         if forum_in.moderator_id:
             rs = self.db.execute("SELECT 1 FROM moderators WHERE id = ?", [forum_in.moderator_id])
-            if not rs.rows:
+            # Check if any row is returned
+            # LibSQL sync client result object has rows property which is a list of tuples
+            # Or fetchone method if wrapped
+            from app.db.client import fetch_one
+            if not fetch_one(rs):
                 raise HTTPException(status_code=404, detail=f"Moderator {forum_in.moderator_id} not found")
 
         return create_forum(self.db, forum_in, creator_id)

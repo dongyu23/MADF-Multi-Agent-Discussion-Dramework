@@ -1,13 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Annotated, Any
-
+import json
 from app.db.session import get_db
 from app.schemas import PersonaCreate, PersonaUpdate, PersonaResponse
 from app.crud import create_persona, get_persona, update_persona, delete_persona
 from app.api.deps import get_current_user
 from app.db.client import fetch_all
+from app.core.cache import cache_service
 
 router = APIRouter()
+
+def personas_list_cache_key(owner_id: int, skip: int, limit: int):
+    return f"personas:list:{owner_id}:{skip}:{limit}"
+
+def obj_to_dict(obj):
+    if isinstance(obj, list):
+        return [obj_to_dict(i) for i in obj]
+    if hasattr(obj, '__dict__'):
+        d = obj.__dict__.copy()
+        for k, v in d.items():
+            d[k] = obj_to_dict(v)
+        return d
+    return obj
 
 @router.post("/", response_model=PersonaResponse)
 def create_new_persona(
@@ -16,13 +30,24 @@ def create_new_persona(
     db: Any = Depends(get_db)
 ):
     # If is_public is True, user must be admin or god (implied requirement)
-    # For now, allow anyone to create personas but owner_id is current_user.id
     if persona.is_public and current_user.role not in ["admin", "god"]:
-         # Optional: forbid regular users from creating public personas?
-         # For now, let's allow it or just set it to False
-         pass
+        raise HTTPException(status_code=403, detail="Not authorized to create public personas")
 
-    return create_persona(db=db, persona=persona, owner_id=current_user.id)
+    new_persona = create_persona(db=db, persona=persona, owner_id=current_user.id)
+    
+    # CRITICAL: Fix cache pattern to match what delete_keys_pattern expects
+    # In redis scan, the pattern is passed directly.
+    # The cache key function is: personas:list:{owner_id}:{skip}:{limit}
+    # So we should delete personas:list:{owner_id}:*
+    # However, delete_keys_pattern uses scan_iter(match=pattern).
+    # Redis scan match pattern works like glob.
+    # Let's verify if the pattern string is correct.
+    # f"personas:list:{current_user.id}:*" should match "personas:list:1:0:100"
+    
+    # Invalidate list cache for this user
+    cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
+    
+    return new_persona
 
 @router.post("/batch/preset", response_model=List[PersonaResponse])
 def create_preset_personas(
@@ -76,6 +101,9 @@ def create_preset_personas(
         created = create_persona(db=db, persona=persona, owner_id=current_user.id)
         created_personas.append(created)
     
+    # Invalidate list cache for this user
+    cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
+    
     return created_personas
 
 @router.get("/", response_model=List[PersonaResponse])
@@ -85,11 +113,23 @@ def read_personas(
     limit: int = 100,
     current_user: Annotated[Any, Depends(get_current_user)] = None
 ):
+    # Cache Aside
+    cache_key = personas_list_cache_key(current_user.id, skip, limit)
+    cached_data = cache_service.get_cache(cache_key)
+    if cached_data:
+        return cached_data
+
     rs = db.execute(
         "SELECT * FROM personas WHERE owner_id = ? LIMIT ? OFFSET ?", 
         [current_user.id, limit, skip]
     )
-    return fetch_all(rs)
+    personas = fetch_all(rs)
+    
+    # Cache Write
+    personas_data = obj_to_dict(personas)
+    cache_service.set_cache(cache_key, personas_data, expire=10) # Short TTL (10s)
+    
+    return personas
 
 @router.get("/{persona_id}", response_model=PersonaResponse)
 def read_persona(persona_id: int, db: Any = Depends(get_db)):
@@ -114,9 +154,13 @@ def update_existing_persona(
         raise HTTPException(status_code=403, detail="Not authorized to update this persona")
 
     updated_persona = update_persona(db, persona_id=persona_id, updates=updates)
+    
+    # Invalidate list cache for this user
+    cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
+    
     return updated_persona
 
-@router.delete("/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{persona_id}", status_code=status.HTTP_200_OK)
 def delete_existing_persona(
     persona_id: int, 
     current_user: Annotated[Any, Depends(get_current_user)],
@@ -124,11 +168,23 @@ def delete_existing_persona(
 ):
     db_persona = get_persona(db, persona_id=persona_id)
     if not db_persona:
-        raise HTTPException(status_code=404, detail="Persona not found")
+        # Idempotent: if already gone, return success but maybe with info
+        return {"message": "Persona already deleted or not found", "id": persona_id}
 
     # Permission check
     if db_persona.owner_id != current_user.id and current_user.role != "god":
         raise HTTPException(status_code=403, detail="Not authorized to delete this persona")
 
-    delete_persona(db, persona_id=persona_id)
-    return None
+    try:
+        success = delete_persona(db, persona_id=persona_id)
+        
+        # Invalidate list cache for this user
+        cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
+        
+        if not success:
+             raise HTTPException(status_code=500, detail="Database failed to delete the record")
+             
+        return {"message": "Persona deleted successfully", "id": persona_id}
+    except Exception as e:
+        logger.error(f"Delete failed for {persona_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")

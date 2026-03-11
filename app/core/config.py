@@ -1,6 +1,10 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 from typing import Optional
+import redis
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -21,8 +25,6 @@ class Settings(BaseSettings):
     SERPAPI_API_KEY: Optional[str] = None
     
     # Security
-    # In production, this should be set via environment variable.
-    # For dev/convenience, we default to a hardcoded insecure key if not provided.
     SECRET_KEY: str = "MADF_DEFAULT_INSECURE_SECRET_KEY_PLEASE_CHANGE_IN_PROD"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
 
@@ -38,7 +40,6 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         # 1. Check environment variable DATABASE_URL first
-        # This supports both PostgreSQL and SQLite
         env_db = os.environ.get("DATABASE_URL")
         if env_db:
             return env_db
@@ -54,3 +55,19 @@ class Settings(BaseSettings):
         return "file:madf.db"
 
 settings = Settings()
+
+# Global Redis Client
+redis_client: Optional[redis.Redis] = None
+
+try:
+    redis_client = redis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        socket_timeout=5,
+        socket_connect_timeout=5
+    )
+    redis_client.ping()
+    logger.info(f"Redis connected to {settings.REDIS_URL}")
+except Exception as e:
+    logger.warning(f"Redis connection failed: {e}")
+    redis_client = None

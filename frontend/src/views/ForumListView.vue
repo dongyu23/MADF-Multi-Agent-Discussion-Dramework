@@ -42,13 +42,21 @@
             </template>
           </a-card-meta>
           
-          <div class="card-footer">
-            <a-space>
-              <a-popconfirm title="确定删除该论坛吗？" @confirm.stop="handleDelete(item.id)">
-                <a-button type="text" danger size="small"><delete-outlined /></a-button>
+          <div class="card-footer" @click.stop>
+            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+              <a-popconfirm 
+                title="确定删除该论坛吗？" 
+                ok-text="确定"
+                cancel-text="取消"
+                @confirm="handleDelete(item.id)"
+                @click.stop
+              >
+                <a-button type="text" danger size="small" @click.stop>
+                  <delete-outlined /> 删除
+                </a-button>
               </a-popconfirm>
-              <span class="action-text">点击进入讨论 <arrow-right-outlined /></span>
-            </a-space>
+              <span class="action-text" @click="$router.push(`/forums/${item.id}`)">点击进入讨论 <arrow-right-outlined /></span>
+            </div>
           </div>
         </a-card>
         
@@ -234,6 +242,7 @@ const handleDelete = async (id: number) => {
         await forumStore.fetchForums()
         message.success('删除成功')
     } catch (e: any) {
+        console.error(e)
         message.error(e.message || '删除失败')
     } finally {
         forumStore.loading = false

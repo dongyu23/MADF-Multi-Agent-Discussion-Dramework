@@ -5,93 +5,120 @@ from psycopg2.extras import RealDictCursor
 from app.core.config import settings
 import logging
 import json
+import time
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
-class PostgresClient:
-    def __init__(self, dsn):
-        self.dsn = dsn
+class PostgresTransaction:
+    def __init__(self, conn):
+        self.conn = conn
+        self.cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-    def execute(self, sql, args=None):
-        conn = psycopg2.connect(self.dsn)
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Replace SQLite placeholder ? with %s
-                sql = sql.replace('?', '%s')
-                cur.execute(sql, args)
-                conn.commit()
-                
-                # Try to fetch results if it's a SELECT
-                try:
-                    rows = cur.fetchall()
-                    if cur.description:
-                        columns = [desc[0] for desc in cur.description]
-                        return PostgresResult(rows, columns)
-                except psycopg2.ProgrammingError:
-                    # No results to fetch
-                    pass
-                
-                # Check for RETURNING id (simulating lastrowid)
-                # But we need to know if the query had RETURNING...
-                # Actually, for INSERTs, we should modify the SQL to add RETURNING id if needed?
-                # Or rely on explicit RETURNING in SQL?
-                # The existing code uses lastrowid.
-                # In PG, we must use RETURNING id.
-                # But we can't auto-inject it easily without parsing.
-                # Let's handle lastrowid by checking if 'id' is in returned rows if user added RETURNING.
-                
-                return PostgresResult([], [])
-        finally:
-            conn.close()
+    def execute(self, query, params=None):
+        # Convert ? to %s for psycopg2
+        query = query.replace('?', '%s')
+        self.cursor.execute(query, params)
+        return self.cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self.conn.rollback()
+        else:
+            self.conn.commit()
+        self.cursor.close()
+
+class PostgresClient:
+    def __init__(self, url):
+        self.url = url
+        self.conn = psycopg2.connect(url)
+        self.conn.autocommit = True
+
+    def execute(self, query, params=None):
+        # Convert ? to %s for psycopg2
+        query = query.replace('?', '%s')
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, params)
+            # If it's a SELECT or RETURNING, fetch results
+            if query.strip().upper().startswith("SELECT") or "RETURNING" in query.upper():
+                return cur.fetchall()
+            return cur
 
     def transaction(self):
-        return PostgresTransaction(self.dsn)
-
+        self.conn.autocommit = False
+        return PostgresTransaction(self.conn)
+    
     def close(self):
-        pass
-
-class PostgresResult:
-    def __init__(self, rows, columns):
-        self.rows = [tuple(row[col] for col in columns) for row in rows]
-        self.columns = columns
-        self.lastrowid = None # PG requires RETURNING id
-        if rows and 'id' in columns:
-             self.lastrowid = rows[0]['id']
-
-class PostgresTransaction:
-    def __init__(self, dsn):
-        self.conn = psycopg2.connect(dsn)
-        self.cursor = self.conn.cursor(cursor_factory=RealDictCursor)
-
-    def execute(self, sql, args=None):
-        sql = sql.replace('?', '%s')
-        self.cursor.execute(sql, args)
-        # Fetch if needed... but execute inside transaction usually doesn't return result object in libsql wrapper?
-        # Wait, libsql transaction.execute returns result.
-        try:
-            rows = self.cursor.fetchall()
-            columns = [desc[0] for desc in self.cursor.description]
-            res = PostgresResult(rows, columns)
-            return res
-        except psycopg2.ProgrammingError:
-             return PostgresResult([], [])
-
-    def commit(self):
-        self.conn.commit()
-
-    def rollback(self):
-        self.conn.rollback()
-
-    def close(self):
-        self.cursor.close()
         self.conn.close()
+
+class RetryingTransaction:
+    """Wrapper for libsql transaction to add retry logic"""
+    def __init__(self, tx):
+        self._tx = tx
+        
+    def execute(self, stmt, args=None):
+        max_retries = 5
+        base_delay = 0.1
+        
+        for attempt in range(max_retries):
+            try:
+                return self._tx.execute(stmt, args)
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "database is locked" in error_msg:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"Database locked in transaction, retrying in {delay:.2f}s (attempt {attempt+1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                raise e
+    
+    def __getattr__(self, name):
+        return getattr(self._tx, name)
+
+class RetryingLibsqlClient:
+    """Wrapper around libsql_client to add retry logic for locking errors"""
+    def __init__(self, client):
+        self._client = client
+
+    def execute(self, stmt, args=None):
+        max_retries = 5
+        base_delay = 0.1
+        
+        for attempt in range(max_retries):
+            try:
+                return self._client.execute(stmt, args)
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "database is locked" in error_msg:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) # Exponential backoff
+                        logger.warning(f"Database locked, retrying in {delay:.2f}s (attempt {attempt+1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                # If not locked error or retries exhausted, raise
+                raise e
+
+    @contextmanager
+    def transaction(self):
+        # We need to wrap the yielded transaction object
+        # self._client.transaction() returns a context manager itself
+        with self._client.transaction() as tx:
+            yield RetryingTransaction(tx)
+        
+    def close(self):
+        return self._client.close()
+        
+    def __getattr__(self, name):
+        return getattr(self._client, name)
 
 class Database:
     def __init__(self):
         self.url = settings.DATABASE_URL
         self.auth_token = settings.TURSO_AUTH_TOKEN
-        # Determine DB type
         self.is_postgres = self.url.startswith("postgresql://") or self.url.startswith("postgres://")
         self.is_remote = self.url.startswith("libsql://") or self.url.startswith("https://")
         
@@ -99,10 +126,6 @@ class Database:
         if self.is_postgres:
             return PostgresClient(self.url)
             
-        # ... (Existing SQLite/LibSQL logic) ...
-        # Create a new client/connection for each request/scope
-        # For local file, this is fast. For remote, it handles HTTP/WS.
-        # sync_client is used to match the existing synchronous codebase.
         token = self.auth_token if self.is_remote else None
         
         # Ensure directory exists for local file
@@ -115,131 +138,134 @@ class Database:
                 except OSError as e:
                     logger.warning(f"Failed to create database directory: {e}")
 
+        # 使用 create_client_sync 创建连接
         client = libsql_client.create_client_sync(
             url=self.url,
             auth_token=token
         )
-        client.execute("PRAGMA foreign_keys = ON")
-        client.execute("PRAGMA journal_mode = WAL")  # Enable Write-Ahead Logging for concurrency
-        client.execute("PRAGMA busy_timeout = 10000") # Increase timeout to 10s
+        
+        # --- SQLite WAL 模式与性能优化 ---
+        if not self.is_remote and not self.is_postgres:
+            try:
+                # 启用 WAL 模式：大幅提升并发读写性能
+                client.execute("PRAGMA journal_mode = WAL")
+                # 设置同步模式为 NORMAL：在 WAL 模式下既安全又快
+                client.execute("PRAGMA synchronous = NORMAL")
+                # 增加缓存大小
+                client.execute("PRAGMA cache_size = -10000")
+                # 启用外键约束
+                client.execute("PRAGMA foreign_keys = ON")
+                # 设置忙碌超时，防止 database is locked 错误 (增加到 30秒)
+                client.execute("PRAGMA busy_timeout = 30000")
+            except Exception as e:
+                logger.warning(f"Failed to set SQLite PRAGMA: {e}")
+
+        # Wrap with retry logic
+        if not self.is_remote and not self.is_postgres:
+            return RetryingLibsqlClient(client)
+            
         return client
 
-    def init_db(self):
-        """Initialize the database with schema."""
+    def init_db(self, schema_path="app/db/schema.sql"):
+        """初始化数据库结构"""
+        # 如果是 Postgres，跳过 schema.sql，假设使用 Alembic 或 schema_pg.sql
         if self.is_postgres:
-            schema_file = "schema_pg.sql"
-        else:
-            schema_file = "schema.sql"
-            
-        schema_path = os.path.join(os.path.dirname(__file__), schema_file)
-        if not os.path.exists(schema_path):
-            logger.error(f"Schema file not found at {schema_path}")
+            logger.info("PostgreSQL detected, skipping schema.sql init. Use Alembic or schema_pg.sql.")
             return
 
-        with open(schema_path, "r", encoding="utf-8") as f:
-            schema_sql = f.read()
+        if not os.path.exists(schema_path):
+            logger.warning(f"Schema file not found: {schema_path}")
+            return
 
-        # Check if DB needs init (e.g. check if users table exists)
+        conn = self.get_connection()
         try:
-             # Use a fresh connection
-             client = self.get_connection()
-             try:
-                 # Check if table exists
-                 try:
-                     client.execute("SELECT 1 FROM users LIMIT 1")
-                     logger.info("Database already initialized.")
-                     return
-                 except Exception:
-                     # Table doesn't exist, proceed with init
-                     pass
-                     
-                 logger.info(f"Initializing database at {self.url}...")
-                 
-                 # Simple split by statement separator
-                 statements = [s.strip() for s in schema_sql.split(";") if s.strip()]
-                 
-                 if statements:
-                     # For SQLite, batch might not be supported or behaves differently in some clients
-                     # Execute one by one
-                     for stmt in statements:
-                         try:
-                             client.execute(stmt)
-                         except Exception as e:
-                             logger.warning(f"Error executing statement: {e}")
-                             
-                 logger.info("Database initialized successfully.")
-             finally:
-                 client.close()
+            with open(schema_path, 'r', encoding='utf-8') as f:
+                script = f.read()
+                # LibSQL client executescript equivalent: split by ;
+                # Or use execute for single statement.
+                # libsql-client-py execute() might not support multiple statements.
+                # Let's split manually.
+                statements = [s.strip() for s in script.split(';') if s.strip()]
+                for stmt in statements:
+                    conn.execute(stmt)
+                    
+            logger.info("Database initialized successfully.")
         except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
-            raise e
+            logger.error(f"Failed to initialize database: {e}")
+        finally:
+            conn.close()
 
 db_manager = Database()
 
-@contextmanager
-def db_transaction(db):
-    tx = db.transaction()
-    try:
-        yield tx
-        tx.commit()
-    except Exception:
-        try:
-            tx.rollback()
-        except Exception:
-            pass
-        raise
-    finally:
-        tx.close()
-
 def get_db():
-    """Dependency that yields a database client."""
-    client = db_manager.get_connection()
+    db = db_manager.get_connection()
     try:
-        yield client
+        yield db
     finally:
-        client.close()
+        db.close()
 
+# Helper for Row Objects (SQLite returns rows, Postgres returns dicts)
 class RowObject:
-    """A helper class to allow attribute access to dict keys."""
     def __init__(self, data):
         self.__dict__.update(data)
-    
-    def __getitem__(self, item):
-        return self.__dict__[item]
         
-    def get(self, item, default=None):
-        return self.__dict__.get(item, default)
-
-def to_dict(row, columns):
-    """Convert a Row to a dict using column names and parse JSON fields."""
-    d = dict(zip(columns, row))
-    # Known JSON fields
-    json_fields = ['theories', 'summary_history', 'thoughts_history', 'participant_ids']
-    for field in json_fields:
-        if field in d and isinstance(d[field], str):
-            try:
-                # Try to parse if it looks like JSON
-                val = d[field].strip()
-                if (val.startswith('[') and val.endswith(']')) or (val.startswith('{') and val.endswith('}')):
-                    d[field] = json.loads(val)
-            except:
-                pass
-    return d
-
-def fetch_one(result, model_class=None):
-    """Return the first row as a dict or model object, or None."""
-    if not result.rows:
+def fetch_one(rs):
+    if rs is None:
         return None
-    data = to_dict(result.rows[0], result.columns)
-    if model_class:
-        return model_class(**data)
-    return RowObject(data)
+    # If it's a list (Postgres or cached), return first
+    if isinstance(rs, list):
+        return RowObject(rs[0]) if rs else None
+    # LibSQL ResultSet
+    if hasattr(rs, 'rows'):
+        return RowObject(dict(zip(rs.columns, rs.rows[0]))) if rs.rows else None
+    # Psycopg2 cursor
+    if hasattr(rs, 'fetchone'):
+        row = rs.fetchone()
+        return RowObject(row) if row else None
+    return None
 
-def fetch_all(result, model_class=None):
-    """Return all rows as a list of dicts or model objects."""
-    if not result.rows:
+def fetch_all(rs):
+    if rs is None:
         return []
-    data_list = [to_dict(row, result.columns) for row in result.rows]
-    if model_class:
-        return [model_class(**data) for data in data_list]
-    return [RowObject(data) for data in data_list]
+    if isinstance(rs, list):
+        return [RowObject(r) for r in rs]
+    if hasattr(rs, 'rows'):
+        return [RowObject(dict(zip(rs.columns, row))) for row in rs.rows]
+    if hasattr(rs, 'fetchall'):
+        return [RowObject(row) for row in rs.fetchall()]
+    return []
+
+@contextmanager
+def db_transaction(db):
+    """
+    Unified transaction context manager.
+    - If `db` is a connection (has `.transaction()`), starts a new transaction.
+    - If `db` is already a transaction object, reuses it (nested transaction support/no-op).
+    """
+    if hasattr(db, 'transaction') and callable(db.transaction):
+        with db.transaction() as tx:
+            yield tx
+    else:
+        # Assume db is already a transaction object or behaves like one
+        # For LibSQL/SQLite, nested transactions are not supported directly with SAVEPOINT in this wrapper yet
+        # So we just yield the existing transaction object.
+        yield db
+
+def db_execute_commit(db, query, params=None):
+    """
+    Helper to execute a query and force commit if applicable.
+    Useful for one-off write operations to ensure persistence in SQLite WAL mode.
+    """
+    if hasattr(db, 'transaction') and callable(db.transaction):
+        with db.transaction() as tx:
+            rs = tx.execute(query, params)
+            # Force commit for SQLite if wrapper doesn't auto-commit on exit (it usually does)
+            # But let's be safe for our specific issue
+            if hasattr(tx, 'commit'):
+                tx.commit()
+            elif hasattr(db, 'commit'):
+                db.commit()
+            return rs
+    else:
+        # Already in a transaction, just execute
+        return db.execute(query, params)
