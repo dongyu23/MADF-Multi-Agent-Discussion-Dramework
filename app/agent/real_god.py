@@ -185,8 +185,12 @@ class RealGodAgent:
                 masked_key = "Unknown/Not Set"
                 
             logger.error(f"LLM Call Error in RealGodAgent: {error_msg}")
-            logger.error(f"Debug Info - API Key: {masked_key}, Model: {settings.final_model_name}, Base URL: {settings.final_base_url}")
-
+            
+            # Use stdout for critical errors to ensure they appear in Docker logs
+            import sys
+            print(f"[CRITICAL] LLM Call Error: {error_msg}", file=sys.stderr)
+            print(f"[CRITICAL] Debug Info - API Key: {masked_key}, Model: {settings.final_model_name}, Base URL: {settings.final_base_url}", file=sys.stderr)
+            
             # Provide more user-friendly error messages for common issues
             if "401" in error_msg:
                 user_msg = f"鉴权失败 (401): API Key 无效或过期。当前使用 Key: {masked_key}"
@@ -202,6 +206,8 @@ class RealGodAgent:
                 user_msg = f"LLM 错误: {error_msg}"
                 
             yield {"type": "error", "content": user_msg}
+            # Important: Log the error to frontend via 'error' type
+            # And return empty string to stop this turn
             return ""
 
         return full_text
