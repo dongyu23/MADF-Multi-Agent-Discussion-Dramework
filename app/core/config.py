@@ -19,9 +19,24 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # LLM API Configuration
-    API_KEY: str
-    MODEL_NAME: str 
-    BASE_URL: str
+    API_KEY: Optional[str] = None
+    MODEL_NAME: Optional[str] = None
+    BASE_URL: Optional[str] = None
+    
+    @property
+    def final_api_key(self) -> str:
+        key = self.API_KEY or os.environ.get("API_KEY") or os.environ.get("ZHIPUAI_API_KEY")
+        if not key:
+            raise ValueError("API_KEY is not set. Please set API_KEY in .env or environment variables.")
+        return key
+
+    @property
+    def final_model_name(self) -> str:
+        return self.MODEL_NAME or os.environ.get("MODEL_NAME") or "glm-4.5"
+
+    @property
+    def final_base_url(self) -> str:
+        return self.BASE_URL or os.environ.get("BASE_URL") or "https://open.bigmodel.cn/api/paas/v4/"
     
     # Search API Configuration
     SERPAPI_API_KEY: Optional[str] = None

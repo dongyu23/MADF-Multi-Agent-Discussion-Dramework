@@ -88,7 +88,7 @@ from utils import get_chat_completion
 logger = logging.getLogger(__name__)
 
 # Search Configuration
-SERPAPI_API_KEY = getattr(settings, "SERPAPI_API_KEY", None)
+SERPAPI_API_KEY = settings.SERPAPI_API_KEY
 
 class RealGodAgent:
     def __init__(self, max_steps: int = 10):
