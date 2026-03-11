@@ -1,0 +1,107 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/madf:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/madf:buildcache,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            # 1. Pull latest image
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/madf:latest
+            
+            # 2. Stop and remove old container (if exists)
+            # Use docker compose if available, or manual docker commands
+            
+            # Ensure directory structure
+            mkdir -p ~/madf
+            cd ~/madf
+            
+            # Create/Update docker-compose.yml on server (optional but recommended)
+            cat <<EOF > docker-compose.yml
+            version: '3.8'
+            services:
+              madf:
+                image: ${{ secrets.DOCKERHUB_USERNAME }}/madf:latest
+                container_name: madf-app
+                ports:
+                  - "8000:8000"
+                environment:
+                  - DATABASE_URL=file:/app/data/madf.db
+                  - REDIS_URL=redis://redis:6379/0
+                  - PYTHONPATH=/app
+                env_file:
+                  - .env
+                volumes:
+                  - madf_data:/app/data
+                depends_on:
+                  - redis
+                restart: always
+                networks:
+                  - madf-network
+            
+              redis:
+                image: redis:7-alpine
+                container_name: madf-redis
+                ports:
+                  - "6379:6379"
+                volumes:
+                  - redis_data:/data
+                restart: always
+                networks:
+                  - madf-network
+            
+            networks:
+              madf-network:
+                driver: bridge
+            
+            volumes:
+              madf_data:
+              redis_data:
+            EOF
+            
+            # Create .env file from secrets if needed (One-time setup usually, or updated here)
+            # Be careful not to overwrite if you manage it manually on server
+            # echo "API_KEY=${{ secrets.API_KEY }}" > .env
+            
+            # 3. Restart services
+            docker compose down
+            docker compose up -d
+            
+            # 4. Prune unused images
+            docker image prune -f
