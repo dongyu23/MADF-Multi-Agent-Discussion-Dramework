@@ -147,6 +147,7 @@ dependency_tree_report.txt
 # IDE / Editor
 .idea/
 .vscode/
+.trae/
 *.swp
 *.swo
 .DS_Store
