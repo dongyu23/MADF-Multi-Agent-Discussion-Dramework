@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
+        # Allow reading from system environment variables if not found in .env
+        case_sensitive=True 
     )
 
     PROJECT_NAME: str = "MADF User Management API"
@@ -18,8 +20,8 @@ class Settings(BaseSettings):
     
     # LLM API Configuration
     API_KEY: str
-    MODEL_NAME: str = "glm-4.6"
-    BASE_URL: str = "https://open.bigmodel.cn/api/paas/v4/"
+    MODEL_NAME: str 
+    BASE_URL: str
     
     # Search API Configuration
     SERPAPI_API_KEY: Optional[str] = None
