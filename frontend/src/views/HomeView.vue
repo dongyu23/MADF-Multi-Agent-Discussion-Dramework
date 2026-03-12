@@ -8,37 +8,40 @@
     <a-row :gutter="[24, 24]">
       <a-col :xs="24" :lg="16">
         <a-card title="最近活跃论坛" :bordered="false" class="dashboard-card main-card">
-          <template #extra><router-link to="/forums">查看全部</router-link></template>
-          <a-list
-            item-layout="horizontal"
-            :data-source="forumStore.forums.slice(0, 5)"
-            :loading="forumStore.loading"
-          >
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <template #actions>
-                  <a @click="$router.push(`/forums/${item.id}`)">进入</a>
-                </template>
-                <a-list-item-meta :description="`创建于 ${new Date(item.start_time).toLocaleDateString()}`">
-                  <template #title>
-                    <a @click="$router.push(`/forums/${item.id}`)" class="list-item-title">{{ item.topic }}</a>
+            <template #extra><router-link to="/forums">查看全部</router-link></template>
+            <div v-if="forumStore.loading" style="text-align: center; padding: 24px;">
+              <a-spin />
+            </div>
+            <div v-else-if="forumStore.forums.length === 0" style="text-align: center; padding: 24px;">
+              <a-empty description="暂无活跃论坛" />
+            </div>
+            <a-list
+              v-else
+              item-layout="horizontal"
+              :data-source="forumStore.forums.slice(0, 5)"
+            >
+              <template #renderItem="{ item }">
+                <a-list-item>
+                  <template #actions>
+                    <a @click="$router.push(`/forums/${item.id}`)">进入</a>
                   </template>
-                  <template #avatar>
-                    <a-avatar style="background-color: #1890ff">{{ item.topic[0] }}</a-avatar>
-                  </template>
-                </a-list-item-meta>
-                <div class="status-tag">
-                   <a-tag :color="item.status === 'active' ? 'processing' : 'default'">
-                     {{ item.status === 'active' ? '进行中' : '已结束' }}
-                   </a-tag>
-                </div>
-              </a-list-item>
-            </template>
-          </a-list>
-          <div v-if="forumStore.forums.length === 0" style="text-align: center; padding: 24px;">
-            <a-empty description="暂无活跃论坛" />
-          </div>
-        </a-card>
+                  <a-list-item-meta :description="`创建于 ${new Date(item.start_time).toLocaleDateString()}`">
+                    <template #title>
+                      <a @click="$router.push(`/forums/${item.id}`)" class="list-item-title">{{ item.topic }}</a>
+                    </template>
+                    <template #avatar>
+                      <a-avatar style="background-color: #1890ff">{{ item.topic[0] }}</a-avatar>
+                    </template>
+                  </a-list-item-meta>
+                  <div class="status-tag">
+                     <a-tag :color="item.status === 'active' ? 'processing' : 'default'">
+                       {{ item.status === 'active' ? '进行中' : '已结束' }}
+                     </a-tag>
+                  </div>
+                </a-list-item>
+              </template>
+            </a-list>
+          </a-card>
       </a-col>
       
       <a-col :xs="24" :lg="8">
@@ -60,13 +63,18 @@
           <a-card title="我的智能体" :bordered="false" class="dashboard-card">
             <template #extra><router-link to="/personas">管理</router-link></template>
             <div class="persona-mini-list">
-              <div v-for="p in personaStore.personas.slice(0, 4)" :key="p.id" class="persona-item">
-                <a-avatar size="small" style="background-color: #7265e6">{{ p.name[0] }}</a-avatar>
-                <span class="persona-name">{{ p.name }}</span>
+              <div v-if="personaStore.loading" style="text-align: center; padding: 12px;">
+                <a-spin size="small" />
               </div>
-               <div v-if="personaStore.personas.length === 0" style="text-align: center; color: #999; padding: 12px 0;">
+              <div v-else-if="personaStore.personas.length === 0" style="text-align: center; color: #999; padding: 12px 0;">
                 暂无智能体
               </div>
+              <template v-else>
+                <div v-for="p in personaStore.personas.slice(0, 4)" :key="p.id" class="persona-item">
+                  <a-avatar size="small" style="background-color: #7265e6">{{ p.name[0] }}</a-avatar>
+                  <span class="persona-name">{{ p.name }}</span>
+                </div>
+              </template>
             </div>
           </a-card>
         </div>

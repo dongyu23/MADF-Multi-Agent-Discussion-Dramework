@@ -97,7 +97,7 @@ export const usePersonaStore = defineStore('persona', {
       this.personas = this.personas.filter(p => p.id !== id)
       
       try {
-        await request.delete(`/personas/${id}/`)
+        await request.delete(`/personas/${id}`)
       } catch (error) {
         console.error('Failed to delete persona:', error)
         // Rollback
