@@ -111,7 +111,7 @@ class RealGodAgent:
             
             # Call web_search as per user sample
             response = client.web_search.web_search(
-                search_engine="std",
+                search_engine="search_std",
                 search_query=query,
                 count=5, 
                 search_recency_filter="noLimit",
