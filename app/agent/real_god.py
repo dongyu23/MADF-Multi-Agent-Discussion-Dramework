@@ -71,7 +71,12 @@ Action: Search[关键词]  (或 Finish[JSON])
 - stance: 性格与立场（400字以上，包含价值观、对待争议的态度）
 - system_prompt: 第一人称扮演提示词
 
+【Action 样例】
+Action: Search[2024年诺贝尔物理学奖得主]
+Action: Finish[{"name": "杰弗里·辛顿", "title": "AI教父", "bio": "...", "theories": ["深度信念网络", "反向传播"], "stance": "...", "system_prompt": "..."}]
+
 请确保所有字符串中的双引号都已正确转义（例如使用 \"），不要使用单引号包围 JSON 键或值。
+JSON必须是标准的，不要使用 ```json ... ``` 包裹。
 请开始你的思考。
 """
 
