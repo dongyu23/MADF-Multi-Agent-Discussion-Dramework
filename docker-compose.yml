@@ -17,8 +17,10 @@ services:
       - .env
     volumes:
       - madf_data:/app/data
+      - madf_db:/app/madf.db
     restart: always
     command: /app/start.sh
 
 volumes:
   madf_data:
+  madf_db:
