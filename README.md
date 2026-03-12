@@ -196,13 +196,11 @@ docker-compose up -d
 ```yaml
     environment:
       # ...
-      # 请务必修改以下值：
+      # 请务必修改以下值：API_KEY不要加引号
       - API_KEY=your_real_api_key_here
       - MODEL_NAME=glm-4.5
       - BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 ```
-
-或者，您也可以创建一个 `.env` 文件来管理这些变量（推荐）。
 
 - **访问地址**: `http://localhost:8000`
 - **查看日志**: `docker-compose logs -f`

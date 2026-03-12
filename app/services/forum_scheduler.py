@@ -477,10 +477,13 @@ class ForumScheduler:
 
                 # --- NEW: Dynamic Narrative Injection ---
                 # Check if the VERY LAST message is from a user (audience)
+                # FIX: Ensure we don't treat the Moderator (who might have moderator_id=None if default) as a user
                 if messages and messages[-1].speaker_name and not messages[-1].persona_id and not messages[-1].moderator_id:
                     last_msg = messages[-1]
-                    # Inject narrative description only for this turn
-                    context_str += f"\n\n(此时，台下的观众 {last_msg.speaker_name} 大声说：“{last_msg.content}”)"
+                    # Double check it's not the moderator by name
+                    if last_msg.speaker_name != moderator.name:
+                        # Inject narrative description only for this turn
+                        context_str += f"\n\n(此时，台下的观众 {last_msg.speaker_name} 大声说：“{last_msg.content}”)"
 
                 # --- NEW: Check for user interruption right BEFORE thinking ---
                 # If a user message arrived while we were summarizing or reconstructing context,

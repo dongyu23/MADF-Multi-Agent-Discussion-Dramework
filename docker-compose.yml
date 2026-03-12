@@ -13,8 +13,6 @@ services:
       - API_KEY=${API_KEY}
       - MODEL_NAME=${MODEL_NAME:-glm-4.5}
       - BASE_URL=${BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
-    env_file:
-      - .env
     volumes:
       - madf_data:/app/data
     restart: always
