@@ -130,13 +130,6 @@ graph TD
 - **扩展性**: `BaseAgent` 类设计遵循开闭原则，易于扩展新的角色类型（如“记录员”、“捣乱者”）。
 - **安全**: 生产环境强制开启 JWT 认证；敏感密钥 (API Key) 仅在服务端存储，不暴露给前端。
 
-#### 4. 架构决策记录 (ADR)
-我们记录了项目演进过程中的关键架构决策，以供查阅：
-- [ADR-001: 选用 FastAPI 作为后端框架](docs/adr/001-backend-framework-fastapi.md)
-- [ADR-002: 选用 Vue 3 + Vite 作为前端技术栈](docs/adr/002-frontend-framework-vue3.md)
-- [ADR-003: 选用 SQLite 作为默认数据库](docs/adr/003-database-selection-sqlite.md)
-
----
 
 ### 🚀 快速启动
 
@@ -175,35 +168,45 @@ BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 
 > **注意**: 
 > 1. `BASE_URL` 必须以 `https://` 开头并以 `/` 结尾。
-> 2. 系统默认使用智谱 GLM 联网搜索，若您有特殊需求仍可配置 `SERPAPI_API_KEY` 作为备选。
+> 2. 系统默认使用智谱 GLM 联网搜索。
 
 ---
 
-#### 2. 方式一：Docker 一键启动 (推荐)
+#### 2. 方式一：Docker Compose 一键启动 (推荐)
 
-最适合快速体验或生产环境部署。我们提供了预构建的 Docker 镜像，您可以直接拉取运行，无需本地构建。该镜像已内置 Redis 服务，无需额外部署。
+最适合快速体验或生产环境部署。我们提供了预构建的 Docker 镜像，您可以直接拉取运行，无需本地构建。
+
+**一键部署命令**
+
+您可以直接下载我们准备好的 `docker-compose.yml` 文件并启动：
 
 ```bash
-# 1. 拉取最新镜像
-docker pull frozenfish717/madf:latest
+# 1. 下载 docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/dongyu23/MADF-Multi-Agent-Discussion-Framework/refs/heads/main/docker-compose.yml
 
-# 2. 启动容器
-# 注意：需要挂载数据卷以持久化数据库，并传入环境变量
-docker run -d \
-  --name madf-app \
-  -p 8000:8000 \
-  -v madf_data:/app/data \
-  -e API_KEY="your_api_key_here" \
-  -e MODEL_NAME="glm-4.5" \
-  -e BASE_URL="https://open.bigmodel.cn/api/paas/v4/" \
-  --restart always \
-  frozenfish717/madf:latest
+# 2. 启动服务
+# 注意：首次启动前，请务必修改 docker-compose.yml 中的环境变量（如 API_KEY）
+docker-compose up -d
 ```
 
-> **提示**：您可以选择使用 `--env-file .env` 加载配置文件（推荐），或者直接使用 `-e` 参数在命令行中传入环境变量。如果使用 `-e`，请确保将示例中的占位符替换为您的真实密钥。
+**配置说明**
+
+下载完成后，请打开 `docker-compose.yml` 文件，找到 `environment` 部分，填入您的真实密钥：
+
+```yaml
+    environment:
+      # ...
+      # 请务必修改以下值：
+      - API_KEY=your_real_api_key_here
+      - MODEL_NAME=glm-4.5
+      - BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+```
+
+或者，您也可以创建一个 `.env` 文件来管理这些变量（推荐）。
 
 - **访问地址**: `http://localhost:8000`
-- **API 文档**: `http://localhost:8000/docs`
+- **查看日志**: `docker-compose logs -f`
+- **停止服务**: `docker-compose down`
 
 #### 3. 方式二：本地源码启动 (开发模式)
 

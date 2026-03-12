@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   madf:
-    image: madf:latest
+    image: frozenfish717/madf:latest
     container_name: madf-app
     ports:
       - "8000:8000"
@@ -10,14 +10,15 @@ services:
       - DATABASE_URL=file:/app/data/madf.db
       - REDIS_URL=redis://localhost:6379/0
       - PYTHONPATH=/app
+      - API_KEY=${API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-glm-4.5}
+      - BASE_URL=${BASE_URL:-https://open.bigmodel.cn/api/paas/v4/}
     env_file:
       - .env
     volumes:
       - madf_data:/app/data
-      - madf_db:/app/madf.db
     restart: always
     command: /app/start.sh
 
 volumes:
   madf_data:
-  madf_db:
