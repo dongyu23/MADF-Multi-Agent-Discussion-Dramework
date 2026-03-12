@@ -161,6 +161,9 @@ Thumbs.db
 *.db
 *.sqlite
 
+# Docker volumes
+madf_data/
+
 # Documentation Exception
 !docs/architecture_readme.md
 

@@ -18,6 +18,7 @@ services:
     volumes:
       - madf_data:/app/data
     restart: always
+    command: /app/start.sh
 
 volumes:
   madf_data:

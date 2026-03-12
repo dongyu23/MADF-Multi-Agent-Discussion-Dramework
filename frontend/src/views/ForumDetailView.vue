@@ -40,6 +40,23 @@
       :loading="forumStore.loading" 
     />
     
+    <div class="chat-input-area" v-if="forumStore.currentForum?.status === 'running'">
+      <div class="input-wrapper">
+        <a-input-search
+          v-model:value="userMessage"
+          placeholder="作为观众发送消息..."
+          enter-button="发送"
+          size="large"
+          @search="handleUserSend"
+          :loading="sendingUserMessage"
+        >
+            <template #prefix>
+                <user-outlined style="color: rgba(0,0,0,.25)" />
+            </template>
+        </a-input-search>
+      </div>
+    </div>
+    
     <ForumTimer 
       v-if="forumStore.currentForum"
       :start-time="forumStore.currentForum.start_time || ''"
@@ -91,13 +108,15 @@ import SystemLogConsole from '@/components/forum/SystemLogConsole.vue'
 import { 
   ArrowLeftOutlined, 
   TeamOutlined, 
-  DeleteOutlined,
-  PlayCircleOutlined,
-  CodeOutlined,
+  DeleteOutlined, 
+  PlayCircleOutlined, 
+  CodeOutlined, 
+  UserOutlined, 
   PauseCircleOutlined
 } from '@ant-design/icons-vue'
 
 import { message } from 'ant-design-vue'
+import request from '@/utils/request' // Import request
 
 const route = useRoute()
 const forumStore = useForumStore()
@@ -106,10 +125,30 @@ const authStore = useAuthStore()
 const router = useRouter()
 
 const starting = ref(false)
+const sendingUserMessage = ref(false)
+const userMessage = ref('')
 const isParticipantModalVisible = ref(false)
 const isSystemLogModalVisible = ref(false)
 const forumId = Number(route.params.id)
 const { connect, disconnect, isConnected } = useForumWebSocket(forumId)
+
+const handleUserSend = async () => {
+    if (!userMessage.value.trim()) return
+    
+    sendingUserMessage.value = true
+    try {
+        await request.post(`/forums/${forumId}/chat`, {
+            content: userMessage.value,
+            speaker: authStore.user?.username || '观众'
+        })
+        userMessage.value = ''
+        message.success('发送成功')
+    } catch (e) {
+        message.error('发送失败')
+    } finally {
+        sendingUserMessage.value = false
+    }
+}
 
 const showParticipantModal = () => {
   isParticipantModalVisible.value = true
@@ -252,5 +291,18 @@ const handleStop = async () => {
   font-size: 16px;
   font-weight: 500;
   color: #262626;
+}
+
+.chat-input-area {
+  padding: 12px 24px;
+  background: #fff;
+  border-top: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.input-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 </style>

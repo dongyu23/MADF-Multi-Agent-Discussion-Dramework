@@ -28,6 +28,65 @@ logger = logging.getLogger(__name__)
 class ForumScheduler:
     def __init__(self):
         self.running_tasks = {}
+        self.user_message_queues = {} # forum_id -> asyncio.Queue
+
+    async def push_user_message(self, forum_id: int, user_name: str, content: str):
+        """External API calls this to inject user message"""
+        if forum_id not in self.user_message_queues:
+            self.user_message_queues[forum_id] = asyncio.Queue()
+        
+        await self.user_message_queues[forum_id].put({
+            "speaker": user_name,
+            "content": content,
+            "timestamp": get_beijing_time_iso()
+        })
+        logger.info(f"User message queued for forum {forum_id}: {content[:20]}...")
+
+    async def _process_user_messages(self, forum_id: int) -> bool:
+        """
+        Process all pending user messages: save to DB, broadcast, and return True if any were processed.
+        """
+        if forum_id not in self.user_message_queues:
+            return False
+            
+        q = self.user_message_queues[forum_id]
+        if q.empty():
+            return False
+            
+        processed_any = False
+        
+        # Process all currently available messages
+        while not q.empty():
+            try:
+                msg_data = q.get_nowait()
+                processed_any = True
+                
+                # 1. Save to DB
+                with self._get_db() as db:
+                    msg = create_message(db, MessageCreate(
+                        forum_id=forum_id,
+                        persona_id=None, # User has no persona
+                        moderator_id=None,
+                        speaker_name=msg_data["speaker"],
+                        content=msg_data["content"],
+                        turn_count=0 
+                    ))
+                    
+                # 2. Broadcast to frontend (so everyone sees it)
+                await self._broadcast_message(
+                    forum_id, 
+                    msg_data["speaker"], 
+                    msg_data["content"], 
+                    msg_id=msg.id,
+                    stream_id=str(uuid.uuid4())
+                )
+                
+                await self._broadcast_system_log(forum_id, f"观众 [{msg_data['speaker']}] 发言: {msg_data['content']}", "info")
+                
+            except Exception as e:
+                logger.error(f"Failed to process user message: {e}")
+        
+        return processed_any
 
     async def start_forum(self, forum_id: int, ablation_flags: dict = None):
         if forum_id in self.running_tasks:
@@ -309,6 +368,14 @@ class ForumScheduler:
             fallback_speaker_idx = 0
             
             while True:
+                # --- NEW: Process User (Audience) Messages FIRST ---
+                # If there are user messages, clear the current agent queue and force a re-think
+                has_user_msgs = await self._process_user_messages(forum_id)
+                if has_user_msgs:
+                    logger.info(f"Forum {forum_id}: User messages detected. Clearing queue and forcing re-think.")
+                    speaker_queue.clear()
+                    # We don't break, we just continue the loop which will rebuild context including user message
+                
                 # Reload forum status
                 with self._get_db() as db:
                     forum = get_forum(db, forum_id)
@@ -408,6 +475,22 @@ class ForumScheduler:
                 else:
                     context_str = shared_memory.get_context_str()
 
+                # --- NEW: Dynamic Narrative Injection ---
+                # Check if the VERY LAST message is from a user (audience)
+                if messages and messages[-1].speaker_name and not messages[-1].persona_id and not messages[-1].moderator_id:
+                    last_msg = messages[-1]
+                    # Inject narrative description only for this turn
+                    context_str += f"\n\n(此时，台下的观众 {last_msg.speaker_name} 大声说：“{last_msg.content}”)"
+
+                # --- NEW: Check for user interruption right BEFORE thinking ---
+                # If a user message arrived while we were summarizing or reconstructing context,
+                # we should catch it now to include it in the think context.
+                if await self._process_user_messages(forum_id):
+                    # Loop back to reconstruct context with new message
+                    logger.info("User message detected before thinking. Restarting loop.")
+                    speaker_queue.clear()
+                    continue
+
                 speaker = None
                 thoughts_map = {}
                 
@@ -462,6 +545,34 @@ class ForumScheduler:
                 
                 # think_results = await asyncio.gather(*[agent_think(p) for p in participants])
                 
+                # --- NEW: Interruptible Thinking with Polling ---
+                think_tasks = [asyncio.create_task(agent_think(p)) for p in participants]
+                think_results = []
+                interrupted = False
+
+                while think_tasks:
+                    # Poll every 0.5s
+                    done, pending = await asyncio.wait(think_tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
+                    think_tasks = list(pending)
+                    for t in done:
+                        try:
+                            res = await t
+                            if res: think_results.append(res)
+                        except Exception as e:
+                            logger.error(f"Think task failed: {e}")
+                    
+                    # Check for interruption
+                    if await self._process_user_messages(forum_id):
+                        logger.info(f"Forum {forum_id}: User message detected during thinking. Interrupting.")
+                        for t in think_tasks:
+                            t.cancel()
+                        interrupted = True
+                        break
+
+                if interrupted:
+                    speaker_queue.clear()
+                    continue 
+
                 # New Logic: Use asyncio.as_completed to process thoughts as they arrive?
                 # But we need to collect ALL results to make a fair decision if multiple apply.
                 # However, we can process the DB updates in parallel.
@@ -470,10 +581,19 @@ class ForumScheduler:
                 # If someone thinks too long, should we skip?
                 # For now, no.
                 
-                think_results = await asyncio.gather(*[agent_think(p) for p in participants])
+                # think_results = await asyncio.gather(*[agent_think(p) for p in participants])
                     
                 logger.info(f"Forum {forum_id}: Agents finished thinking.")
                 
+                # --- NEW: Check for user interruption right AFTER thinking ---
+                # If a user message arrived while agents were thinking, their thoughts are now STALE.
+                # We must discard them, save the user message, and restart the loop to re-think.
+                if await self._process_user_messages(forum_id):
+                    logger.info("User message detected after thinking. Discarding thoughts and restarting.")
+                    speaker_queue.clear()
+                    # Discard thoughts implicitly by continuing loop
+                    continue
+
                 # Process thoughts (need DB to save thoughts)
                 # Optimization: Do this ASYNC or in background if possible?
                 # We need to know who speaks to proceed.
@@ -558,7 +678,9 @@ class ForumScheduler:
                     valid_remaining = [p for p in remaining if p.name != last_speaker_name]
                     
                     if valid_remaining:
-                        speaker = valid_remaining[0]
+                        # 随机从valid_remaining中选择一个
+                        import random
+                        speaker = random.choice(valid_remaining)
                     else:
                         # Reset batch if everyone spoke or valid ones exhausted
                         batch_spoken_agents.clear()
@@ -566,13 +688,18 @@ class ForumScheduler:
                         # Fallback round-robin
                         # Ensure fallback doesn't pick last speaker either
                         attempts = 0
-                        while attempts < len(participants):
-                            candidate = participants[fallback_speaker_idx % len(participants)]
-                            fallback_speaker_idx += 1
-                            attempts += 1
-                            if candidate.name != last_speaker_name:
-                                speaker = candidate
-                                break
+                        valid_fallbacks = [p for p in participants if p.name != last_speaker_name]
+                        if valid_fallbacks:
+                             import random
+                             speaker = random.choice(valid_fallbacks)
+                        
+                        # while attempts < len(participants):
+                        #     candidate = participants[fallback_speaker_idx % len(participants)]
+                        #     fallback_speaker_idx += 1
+                        #     attempts += 1
+                        #     if candidate.name != last_speaker_name:
+                        #         speaker = candidate
+                        #         break
                         
                         # If still None (e.g. only 1 participant total), then allow consecutive
                         if not speaker and participants:
@@ -689,6 +816,12 @@ class ForumScheduler:
                     
                     first_token = True
                     async for chunk in async_generator_wrapper(gen):
+                        # --- NEW: Interruption Check ---
+                        if await self._process_user_messages(forum_id):
+                            logger.info(f"Moderator {moderator.name} interrupted by user.")
+                            await self._broadcast_system_log(forum_id, f"主持人被观众打断", "warning")
+                            break
+                            
                         if first_token:
                             await self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 开始发言...", "speech")
                             first_token = False
@@ -763,6 +896,12 @@ class ForumScheduler:
                     thought_content = thought.get('mind') if thought else None
                     
                     async for chunk in async_generator_wrapper(gen):
+                        # --- NEW: Interruption Check ---
+                        if await self._process_user_messages(forum_id):
+                            logger.info(f"Agent {agent.name} interrupted by user.")
+                            await self._broadcast_system_log(forum_id, f"嘉宾 [{agent.name}] 被观众打断", "warning")
+                            break
+
                         if first_token:
                             ttft = time.time() - start_speak_time
                             logger.info(f"Agent {agent.name} TTFT: {ttft:.2f}s")

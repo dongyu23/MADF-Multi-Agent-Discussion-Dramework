@@ -146,6 +146,22 @@ async def start_forum_endpoint(
     ablation_flags = request.ablation_flags if request else None
     return await service.start_forum(forum_id, current_user.id, is_admin, ablation_flags)
 
+@router.post("/{forum_id}/chat", status_code=202)
+async def user_chat(forum_id: int, request: dict):
+    """
+    Inject a user message into the forum loop.
+    Request body: {"speaker": "User", "content": "Hello"}
+    """
+    speaker = request.get("speaker", "观众")
+    content = request.get("content", "")
+    
+    if not content:
+        raise HTTPException(status_code=400, detail="Content is required")
+        
+    from app.services.forum_scheduler import scheduler
+    await scheduler.push_user_message(forum_id, speaker, content)
+    return {"status": "queued"}
+
 @router.post("/{forum_id}/messages", response_model=MessageResponse)
 async def post_message(
     forum_id: int, 

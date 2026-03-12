@@ -91,17 +91,6 @@
           />
         </a-form-item>
         
-        <a-form-item label="主持人" name="moderator_id">
-          <a-select
-            v-model:value="formState.moderator_id"
-            placeholder="选择主持人（默认：系统默认主持人）"
-            :options="moderatorOptions"
-            allow-clear
-            size="large"
-          >
-          </a-select>
-        </a-form-item>
-
         <a-form-item
           label="邀请参与者"
           name="participant_ids"
@@ -126,9 +115,9 @@
             提示：您可以选择自己创建的智能体，也可以邀请公开的智能体加入。
           </div>
         </a-form-item>
-        
+
         <a-form-item label="论坛时长 (分钟)" name="duration">
-            <a-input-number v-model:value="formState.duration" :min="5" :max="120" />
+            <a-input-number v-model:value="formState.duration" :min="5" :max="15" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -151,7 +140,7 @@ const formState = reactive({
   topic: '',
   participant_ids: [] as number[],
   moderator_id: undefined as number | undefined,
-  duration: 30
+  duration: 5
 })
 
 onMounted(() => {
@@ -215,7 +204,7 @@ const showModal = async () => {
   formState.topic = ''
   formState.participant_ids = []
   formState.moderator_id = undefined
-  formState.duration = 30
+  formState.duration = 5
 }
 
 const handleOk = async () => {
