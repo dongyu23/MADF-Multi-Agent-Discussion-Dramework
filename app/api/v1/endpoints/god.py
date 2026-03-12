@@ -77,13 +77,18 @@ async def generate_real_personas(
                         
                     for p_data in personas_data:
                         # Add name to session list
-                        if p_data.get('name'):
+                        # Safe check for name
+                        if isinstance(p_data, dict) and p_data.get('name'):
                             generated_names_in_session.append(p_data['name'])
                         
                         # Use unified service
                         try:
+                            if not isinstance(p_data, dict):
+                                logger.error(f"Invalid persona data format: {p_data}")
+                                continue
+                                
                             # Log debug info
-                            msg_content = f"正在保存角色: {p_data.get('name')}..."
+                            msg_content = f"正在保存角色: {p_data.get('name', 'Unknown')}..."
                             yield f"data: {json.dumps({'type': 'status', 'content': msg_content}, ensure_ascii=False)}\n\n"
                             
                             saved_p = persona_service.save_generated_persona(user_id, p_data, db=db)

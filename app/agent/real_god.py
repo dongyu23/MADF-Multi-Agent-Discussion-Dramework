@@ -395,7 +395,7 @@ class RealGodAgent:
                         
                         # Add to generated names context
                         for p in persona:
-                            if "name" in p:
+                            if isinstance(p, dict) and "name" in p:
                                 name = p["name"]
                                 generated_names.append(name)
                                 
@@ -404,6 +404,9 @@ class RealGodAgent:
                                 if session_context == "无":
                                     session_context = ""
                                 session_context += f"\n- 已生成角色: {name} ({p.get('title', '未知')})\n  简介: {bio_snippet}\n"
+                            else:
+                                # Handle case where p is not a dict or missing name
+                                logger.warning(f"Skipping invalid persona entry: {p}")
                                 
                         yield {"type": "result", "content": persona}
                         finished = True

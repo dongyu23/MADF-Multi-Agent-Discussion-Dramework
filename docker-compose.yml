@@ -2,9 +2,6 @@ version: '3.8'
 
 services:
   madf:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: madf:latest
     container_name: madf-app
     ports:
