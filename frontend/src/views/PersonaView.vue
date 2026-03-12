@@ -53,13 +53,8 @@
                               <a-menu-item key="edit" @click="showModal(persona)">
                                 <edit-outlined /> 编辑
                               </a-menu-item>
-                              <a-menu-item key="delete">
-                                <a-popconfirm
-                                  title="确定要删除这个智能体吗？"
-                                  @confirm="handleDelete(persona.id)"
-                                >
-                                  <span style="color: #ff4d4f"><delete-outlined /> 删除</span>
-                                </a-popconfirm>
+                              <a-menu-item key="delete" @click="showDeleteConfirm(persona)">
+                                <span style="color: #ff4d4f"><delete-outlined /> 删除</span>
                               </a-menu-item>
                             </a-menu>
                           </template>
@@ -143,9 +138,7 @@
                 <a-space>
                   <a-button type="link" size="small" @click="showDetails(record)">详情</a-button>
                   <a-button type="link" size="small" @click="showModal(record)">编辑</a-button>
-                  <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
-                    <a-button type="link" size="small" danger>删除</a-button>
-                  </a-popconfirm>
+                  <a-button type="link" size="small" danger @click="showDeleteConfirm(record)">删除</a-button>
                 </a-space>
               </template>
             </template>
@@ -250,9 +243,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onMounted, reactive, ref, computed, createVNode } from 'vue'
 import { usePersonaStore, type Persona } from '@/stores/persona'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import GodAgentModal from '@/components/god/GodAgentModal.vue'
 import RealGodAgentModal from '@/components/god/RealGodAgentModal.vue'
 import {
@@ -262,7 +255,8 @@ import {
   ThunderboltOutlined,
   EyeOutlined,
   GlobalOutlined,
-  MoreOutlined
+  MoreOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 
 const personaStore = usePersonaStore()
@@ -376,6 +370,20 @@ const handleDelete = async (id: number) => {
   } catch (e) {
     message.error('删除失败')
   }
+}
+
+const showDeleteConfirm = (persona: Persona) => {
+  Modal.confirm({
+    title: '确定要删除这个智能体吗？',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `删除后无法恢复：${persona.name}`,
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      await handleDelete(persona.id)
+    }
+  })
 }
 
 const showDetails = (persona: Persona) => {
