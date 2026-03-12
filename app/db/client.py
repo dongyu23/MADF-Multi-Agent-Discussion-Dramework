@@ -76,6 +76,10 @@ class RetryingTransaction:
                         continue
                 raise e
     
+    def commit(self):
+        if hasattr(self._tx, 'commit'):
+            return self._tx.commit()
+            
     def __getattr__(self, name):
         return getattr(self._tx, name)
 

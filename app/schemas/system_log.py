@@ -9,6 +9,7 @@ class SystemLogBase(BaseModel):
 
 class SystemLogCreate(SystemLogBase):
     forum_id: int
+    timestamp: Optional[datetime] = None
 
 class SystemLogResponse(SystemLogBase):
     id: int

@@ -139,6 +139,9 @@ def delete_persona(db, persona_id: int):
             return True # Already deleted or not exists
 
         with db_transaction(db) as tx:
+            # Manually set persona_id to NULL in messages to avoid FK violation
+            tx.execute("UPDATE messages SET persona_id = NULL WHERE persona_id = ?", [persona_id])
+            
             # Cascading deletes should be handled by DB foreign keys, 
             # but let's be explicit if needed or just execute
             rs = tx.execute("DELETE FROM personas WHERE id = ?", [persona_id])
@@ -209,6 +212,7 @@ def create_forum(db, forum: ForumCreate, creator_id: int):
         raise
 
 def delete_forum(db, forum_id: int):
+    logger.info(f"Attempting to delete forum {forum_id}")
     try:
         with db_transaction(db) as tx:
             tx.execute("DELETE FROM messages WHERE forum_id = ?", [forum_id])
@@ -216,13 +220,18 @@ def delete_forum(db, forum_id: int):
             tx.execute("DELETE FROM system_logs WHERE forum_id = ?", [forum_id])
             rs = tx.execute("DELETE FROM forums WHERE id = ?", [forum_id])
             
+            affected = rs.rows_affected if hasattr(rs, 'rows_affected') else -1
+            logger.info(f"Deleted forum {forum_id}, rows affected: {affected}")
+            
             # FORCE COMMIT
             if hasattr(tx, 'commit'):
                 tx.commit()
+                logger.info("Transaction committed explicitly")
             elif hasattr(db, 'commit'):
                 db.commit()
+                logger.info("DB committed explicitly")
                 
-            success = rs.rows_affected > 0 if hasattr(rs, 'rows_affected') else True
+            success = affected > 0 if affected != -1 else True
             
             return success
     except Exception as e:

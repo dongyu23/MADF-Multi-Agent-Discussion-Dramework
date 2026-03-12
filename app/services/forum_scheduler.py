@@ -65,11 +65,14 @@ class ForumScheduler:
         """Broadcast system log to frontend for 'terminal-like' view and optionally persist"""
         
         # 1. Broadcast immediately (async) so frontend gets it ASAP
+        # This is the "Native" passing path - extremely fast via WebSocket
+        timestamp = get_beijing_time_iso()
+        
         try:
             await manager.broadcast(forum_id, {
                 "type": "system_log",
                 "data": {
-                    "timestamp": get_beijing_time_iso(),
+                    "timestamp": timestamp,
                     "level": level,
                     "content": message,
                     "source": source
@@ -78,11 +81,13 @@ class ForumScheduler:
         except Exception as e:
             logger.error(f"Broadcast failed: {e}")
 
-        # 2. Buffer to Redis for later batch persistence
-        # Use cache_service wrapper instead of direct redis_client
+        # 2. Fire-and-forget persistence (Background Task)
+        # Don't wait for Redis/DB write to complete before returning
+        asyncio.create_task(self._persist_log_bg(forum_id, message, level, source, timestamp))
+
+    async def _persist_log_bg(self, forum_id: int, message: str, level: str, source: str, timestamp: str):
+        """Background persistence logic decoupled from main flow"""
         from app.core.cache import cache_service
-        from app.schemas.system_log import SystemLogCreate
-        import json
         
         try:
             log_entry = {
@@ -90,47 +95,39 @@ class ForumScheduler:
                 "level": level,
                 "source": source,
                 "content": message,
-                "timestamp": get_beijing_time_iso()
+                "timestamp": timestamp
             }
-            # Push to a dedicated list for this forum (or global queue)
-            # Using global queue for simpler batch worker
+            # Push to Redis buffer
             if not cache_service.push_message("system_logs_buffer", log_entry):
-                 # Fallback to direct DB write if Redis fails (handled below)
+                 # Fallback to direct DB write if Redis fails
                  raise Exception("Redis push failed")
                  
         except Exception as e:
-            logger.error(f"Redis buffering failed: {e}")
-            # Fallback to direct DB persistence in thread if Redis not available
-            # Use passed db or create new one
+            # Fallback to direct DB persistence in thread
             from app.crud.crud_system_log import create_system_log
+            from app.schemas.system_log import SystemLogCreate
             
             def persist_log_sync():
                 local_db = None
-                should_close = False
                 try:
-                    if db:
-                        local_db = db
-                    else:
-                        local_db = db_manager.get_connection()
-                        should_close = True
-                        
+                    local_db = db_manager.get_connection()
                     create_system_log(local_db, SystemLogCreate(
                         forum_id=forum_id,
                         level=level,
                         source=source,
-                        content=message
+                        content=message,
+                        timestamp=timestamp
                     ))
                 except Exception as inner_e:
                     logger.error(f"Failed to persist system log (thread): {inner_e}")
                 finally:
-                    if should_close and local_db:
+                    if local_db:
                         try:
                             local_db.close()
                         except:
                             pass
 
-            # Schedule task
-            asyncio.create_task(asyncio.to_thread(persist_log_sync))
+            await asyncio.to_thread(persist_log_sync)
 
     async def _flush_logs_to_db(self):
         """Batch flush logs from Redis buffer to DB"""
@@ -166,7 +163,8 @@ class ForumScheduler:
                                 forum_id=data["forum_id"],
                                 level=data["level"],
                                 source=data["source"],
-                                content=data["content"]
+                                content=data["content"],
+                                timestamp=data.get("timestamp") # Pass original timestamp!
                             )
                             create_system_log(tx, log_obj)
                         except Exception as inner_e:
@@ -328,9 +326,19 @@ class ForumScheduler:
                 # 1. Check Time -> Closing
                 if current_time > end_time:
                     logger.info(f"Forum {forum_id} time up. Closing.")
-                    await self._moderator_speak(forum_id, moderator, "closing", ablation_flags=ablation_flags)
+                    
+                    # Push "closed" status to frontend immediately BEFORE moderator starts speaking closing remarks
+                    # This ensures UI updates (e.g. stops timer) right away.
+                    await manager.broadcast(forum_id, {
+                        "type": "status_update",
+                        "status": "closed"
+                    })
+                    
+                    # Also update DB early to prevent race conditions
                     with self._get_db() as db:
                         update_forum(db, forum_id, status="closed")
+                        
+                    await self._moderator_speak(forum_id, moderator, "closing", ablation_flags=ablation_flags)
                     break
 
                 # 2. Reconstruct Context (Shared Memory)
@@ -408,9 +416,8 @@ class ForumScheduler:
                 # However, to speed up, we can start the NEXT speaker's preparation earlier?
                 # No, because context depends on the previous speaker's FULL message.
                 
-                # Everyone thinks
-                # Reduce log noise
-                # await self._broadcast_system_log(forum_id, "所有参与者正在思考中...", "info")
+                # Broadcast thinking log - Use create_task to not block thinking
+                asyncio.create_task(self._broadcast_system_log(forum_id, "所有参与者正在思考中...", "info"))
                 logger.info(f"Forum {forum_id}: Agents start thinking...")
                 
                 async def agent_think(ag):
@@ -493,17 +500,86 @@ class ForumScheduler:
 
                 # Select Speaker (In-Memory)
                 if speaker_queue:
-                    speaker = speaker_queue.pop(0)
-                    batch_spoken_agents.add(speaker)
-                elif participants:
-                    remaining = [p for p in participants if p not in batch_spoken_agents]
-                    if remaining:
-                        speaker = remaining[0]
+                    # Enforce constraint: A speaker cannot speak twice in a row
+                    # even if they are in the queue.
+                    
+                    last_speaker_name = None
+                    if messages:
+                        last_speaker_name = messages[-1].speaker_name
+                    
+                    candidate = speaker_queue[0]
+                    
+                    # If candidate is same as last speaker, try to find another one in queue
+                    if last_speaker_name and candidate.name == last_speaker_name:
+                        # Find first non-consecutive speaker
+                        found_alt = False
+                        for i in range(1, len(speaker_queue)):
+                            alt = speaker_queue[i]
+                            if alt.name != last_speaker_name:
+                                # Swap and pop
+                                speaker = speaker_queue.pop(i)
+                                found_alt = True
+                                break
+                        
+                        if not found_alt:
+                            # If everyone in queue is the same person (unlikely) or queue has only 1 person who just spoke
+                            # Then we MUST skip them to avoid monologue.
+                            # Fallback to general pool logic below.
+                            logger.info(f"Skipping queued speaker {candidate.name} to avoid consecutive speech.")
+                            speaker = None # Force fallback
+                            # Note: We do NOT pop them, they stay in queue for next turn?
+                            # Or should we pop and discard? 
+                            # Better to keep them for next turn if possible, but for now let's just not pick them.
+                            # Actually, if we don't pop, they block the queue forever if logic loops.
+                            # Let's move them to end of queue?
+                            if len(speaker_queue) > 1:
+                                # Rotate
+                                speaker_queue.append(speaker_queue.pop(0))
+                                # Try again next loop? No, we need a speaker NOW.
+                                # If we rotated, the new [0] is different (handled by swap logic above usually).
+                                # If we are here, it means we couldn't find anyone else in queue.
+                                speaker = None
+                            else:
+                                # Queue has only this guy, and he just spoke.
+                                # Ignore queue, try fallback.
+                                pass
                     else:
+                        speaker = speaker_queue.pop(0)
+
+                    if speaker:
+                        batch_spoken_agents.add(speaker)
+                
+                # If no speaker selected from queue (empty or skipped due to consecutive rule)
+                if not speaker and participants:
+                    remaining = [p for p in participants if p not in batch_spoken_agents]
+                    
+                    # Filter out last speaker from remaining to be safe
+                    last_speaker_name = messages[-1].speaker_name if messages else None
+                    valid_remaining = [p for p in remaining if p.name != last_speaker_name]
+                    
+                    if valid_remaining:
+                        speaker = valid_remaining[0]
+                    else:
+                        # Reset batch if everyone spoke or valid ones exhausted
                         batch_spoken_agents.clear()
-                        speaker = participants[fallback_speaker_idx % len(participants)]
-                        fallback_speaker_idx += 1
-                    batch_spoken_agents.add(speaker)
+                        
+                        # Fallback round-robin
+                        # Ensure fallback doesn't pick last speaker either
+                        attempts = 0
+                        while attempts < len(participants):
+                            candidate = participants[fallback_speaker_idx % len(participants)]
+                            fallback_speaker_idx += 1
+                            attempts += 1
+                            if candidate.name != last_speaker_name:
+                                speaker = candidate
+                                break
+                        
+                        # If still None (e.g. only 1 participant total), then allow consecutive
+                        if not speaker and participants:
+                             speaker = participants[0]
+
+                    if speaker:
+                        batch_spoken_agents.add(speaker)
                 
                 # Fire and forget DB updates for thoughts (using create_task)
                 # This removes the DB write latency from the critical path of "Next Speaker"
@@ -528,23 +604,21 @@ class ForumScheduler:
                                     except: pass
                                 update_forum_participant(db, f_id, p_db.persona_id, thoughts_history=current + [th])
                 
-                asyncio.create_task(save_thoughts_bg(think_results, forum_id))
+                if think_results:
+                    asyncio.create_task(save_thoughts_bg(think_results, forum_id))
 
                 # --- Queue Logic Refinement ---
                 # Broadcasting logs is fast (Redis/WS), keep it.
                 queue_names = [a.name for a in speaker_queue]
                 if queue_names:
-                    await self._broadcast_system_log(forum_id, f"当前发言队列: {', '.join(queue_names)}", "info")
+                    # Optimized: Use background task for log persistence to avoid blocking
+                    asyncio.create_task(self._broadcast_system_log(forum_id, f"当前发言队列: {', '.join(queue_names)}", "info"))
                 
                 if speaker:
-                    await self._broadcast_system_log(forum_id, f"下一位发言: [{speaker.name}]", "info")
+                    # Async log to not block speaking
+                    asyncio.create_task(self._broadcast_system_log(forum_id, f"下一位发言: [{speaker.name}]", "info"))
+                    
                     thought = thoughts_map.get(speaker) or {}
-                    
-                    # PRE-FETCH / WARM-UP logic could go here if we had a streaming API that supports it.
-                    # For now, just start speaking immediately.
-                    
-                    # Log optimization
-                    # await self._broadcast_system_log(forum_id, f"嘉宾 [{speaker.name}] 正在准备发言...", "info")
                     
                     await self._agent_speak(forum_id, speaker, thought, context_str, ablation_flags=ablation_flags)
                 
@@ -610,9 +684,15 @@ class ForumScheduler:
 
             if gen:
                 try:
-                    await self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 开始发言...", "info")
+                    # Async log
+                    asyncio.create_task(self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 正在构思...", "thought"))
                     
+                    first_token = True
                     async for chunk in async_generator_wrapper(gen):
+                        if first_token:
+                            await self._broadcast_system_log(forum_id, f"主持人 [{moderator.name}] 开始发言...", "speech")
+                            first_token = False
+
                         if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
                             token = chunk.choices[0].delta.content
                             content += token
@@ -675,7 +755,7 @@ class ForumScheduler:
             
             if gen:
                 try:
-                    await self._broadcast_system_log(forum_id, f"嘉宾 [{agent.name}] 开始发言...", "info")
+                    # await self._broadcast_system_log(forum_id, f"嘉宾 [{agent.name}] 正在构思...", "thought")
                     
                     first_token = True
                     start_speak_time = time.time()
@@ -686,6 +766,7 @@ class ForumScheduler:
                         if first_token:
                             ttft = time.time() - start_speak_time
                             logger.info(f"Agent {agent.name} TTFT: {ttft:.2f}s")
+                            await self._broadcast_system_log(forum_id, f"嘉宾 [{agent.name}] 开始发言...", "speech")
                             first_token = False
                             
                         if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
@@ -750,20 +831,27 @@ class ForumScheduler:
         })
 
     async def _broadcast_message(self, forum_id: int, speaker: str, content: str, persona_id: int = None, moderator_id: int = None, stream_id: str = None, msg_id: int = None, thought: str = None):
-        await manager.broadcast(forum_id, {
-            "type": "new_message",
-            "data": {
-                "id": msg_id,
-                "forum_id": forum_id,
-                "speaker_name": speaker,
-                "content": content,
-                "persona_id": persona_id,
-                "moderator_id": moderator_id,
-                "stream_id": stream_id,
-                "thought": thought,
-                "timestamp": get_beijing_time_iso()
-            }
-        })
+        """Broadcast message immediately to WS"""
+        # Optimized: Send to WS immediately, do NOT wait for any DB operations or complex logic
+        timestamp = get_beijing_time_iso()
+        
+        try:
+            await manager.broadcast(forum_id, {
+                "type": "new_message",
+                "data": {
+                    "id": msg_id, # Can be None if optimized to send before DB insert (frontend should handle temp ID)
+                    "forum_id": forum_id,
+                    "speaker_name": speaker,
+                    "content": content,
+                    "persona_id": persona_id,
+                    "moderator_id": moderator_id,
+                    "stream_id": stream_id,
+                    "thought": thought,
+                    "timestamp": timestamp
+                }
+            })
+        except Exception as e:
+            logger.error(f"Message broadcast failed: {e}")
 
     async def _broadcast_system_message(self, forum_id: int, content: str):
         await manager.broadcast(forum_id, {

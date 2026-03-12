@@ -1,13 +1,13 @@
 <template>
-  <div class="message-item" :class="{ 'message-self': isSelf, 'message-moderator': isModerator }">
+  <div class="message-item" :class="{ 'message-moderator': isModerator }">
     <div class="message-avatar">
-      <a-avatar :style="{ backgroundColor: avatarColor }" size="large">
-        <template #icon v-if="isModerator">
+      <a-avatar v-if="isModerator" key="moderator-avatar" :style="{ backgroundColor: avatarColor }" size="large">
+        <template #icon>
           <user-outlined />
         </template>
-        <span v-if="!isModerator">
-          {{ speakerName[0] }}
-        </span>
+      </a-avatar>
+      <a-avatar v-else key="participant-avatar" :style="{ backgroundColor: avatarColor }" size="large">
+        {{ speakerInitial }}
       </a-avatar>
     </div>
     
@@ -65,6 +65,10 @@ const isModerator = computed(() => {
 
 const isStreaming = computed(() => {
     return props.isStreaming || false
+})
+
+const speakerInitial = computed(() => {
+    return props.speakerName ? props.speakerName[0] : '?'
 })
 
 const formatTime = (isoString: string) => {

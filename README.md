@@ -71,10 +71,9 @@ graph TD
     end
     
     subgraph External ["外部服务"]
-        GLM4["智谱 GLM-4 API"]
-        Search["搜索引擎 API"]
+        GLM4["智谱 GLM-4 API (LLM + Search)"]
     end
-
+    
     User <-->|HTTP/WebSocket| Frontend
     Frontend <-->|REST API| API
     Frontend <-->|WebSocket| WS_Server
@@ -84,7 +83,6 @@ graph TD
     
     Scheduler --> LLM_Client
     GodAgent --> LLM_Client
-    GodAgent --> Search
     
     LLM_Client --> GLM4
     
@@ -171,11 +169,13 @@ API_KEY="your_api_key_here"
 MODEL_NAME="glm-4.5"
 BASE_URL=https://open.bigmodel.cn/api/paas/v4/
 
-# Search API (可选，用于 God Agent 联网搜索)
-SERPAPI_API_KEY="your_serpapi_key_here"
+# Search API (使用 GLM-4 联网搜索，无需额外配置，复用 API_KEY)
+# SERPAPI_API_KEY 已移除
 ```
 
-> **注意**: `BASE_URL` 必须以 `https://` 开头并以 `/` 结尾，适配 OpenAI 兼容接口。
+> **注意**: 
+> 1. `BASE_URL` 必须以 `https://` 开头并以 `/` 结尾。
+> 2. 系统默认使用智谱 GLM 联网搜索，若您有特殊需求仍可配置 `SERPAPI_API_KEY` 作为备选。
 
 ---
 
@@ -193,7 +193,9 @@ docker run -d \
   --name madf-app \
   -p 8000:8000 \
   -v madf_data:/app/data \
-  --env-file .env \
+  -e API_KEY="your_api_key_here" \
+  -e MODEL_NAME="glm-4.5" \
+  -e BASE_URL="https://open.bigmodel.cn/api/paas/v4/" \
   --restart always \
   frozenfish717/madf:latest
 ```
@@ -248,7 +250,7 @@ npm run dev
 
 #### 4. 常见问题 (FAQ)
 
-- **Q: 启动后无法联网搜索角色信息？**
-  - A: 请检查 `.env` 中的 `SERPAPI_API_KEY` 是否配置。如果没有，God Agent 将无法获取实时信息。
+- **Q: 启动后角色生成缓慢？**
+  - A: 系统使用 GLM 联网搜索获取真实信息，首次生成需要一定时间进行网络请求和内容解析，请耐心等待。
 - **Q: WebSocket 连接失败？**
   - A: 请确保没有防火墙或代理软件拦截 `ws://localhost:8000` 的连接。

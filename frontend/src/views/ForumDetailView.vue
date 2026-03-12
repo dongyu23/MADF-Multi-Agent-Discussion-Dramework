@@ -42,7 +42,7 @@
     
     <ForumTimer 
       v-if="forumStore.currentForum"
-      :start-time="forumStore.currentForum.start_time"
+      :start-time="forumStore.currentForum.start_time || ''"
       :duration-minutes="forumStore.currentForum?.duration_minutes || 30" 
       :status="forumStore.currentForum?.status || 'pending'"
     />
@@ -51,7 +51,7 @@
     <a-modal
       v-model:open="isParticipantModalVisible"
       title="参与者列表"
-      width="600px"
+      width="900px"
       :footer="null"
     >
       <div class="modal-content">
@@ -93,7 +93,8 @@ import {
   TeamOutlined, 
   DeleteOutlined,
   PlayCircleOutlined,
-  CodeOutlined
+  CodeOutlined,
+  PauseCircleOutlined
 } from '@ant-design/icons-vue'
 
 import { message } from 'ant-design-vue'
@@ -123,47 +124,56 @@ const goBack = () => {
 }
 
 onMounted(async () => {
-  // If we are coming back to the same forum, reset loading state if needed
-  // But forumStore.fetchForum handles smart reloading
+  // Use a local flag to track if component is still mounted
+  let isMounted = true
+  
+  // Cleanup function for this specific mount
+  onUnmounted(() => {
+    isMounted = false
+    // We don't call disconnect() here as per requirements to keep connection alive
+    // But we might want to save state
+    forumStore.leaveForum()
+  })
   
   try {
-    // 1. Load static forum data first via HTTP
+    // 1. Initial Load: Use store to fetch data (this handles cache internally)
     await forumStore.fetchForum(forumId)
     
-    // Check if forum exists (fetchForum might set currentForum to null on error)
-    // NOTE: If fetchForum uses cached data, it might return immediately but loading might not be triggered.
-    // We rely on forumStore to manage loading state.
-    
+    if (!isMounted) return
+
+    // 2. Validate forum existence
     if (!forumStore.currentForum) {
-         // Maybe it's still loading? fetchForum awaits.
-         // If it's null after await, it failed.
          message.error('论坛不存在或加载失败')
          router.push('/forums')
          return
     }
     
-    // Force reactivity update if needed?
-    // Vue should handle it.
-    
-    // 3. Load participant info context
+    // 3. Background: Load participant info context (non-blocking)
     personaStore.fetchPersonas(authStore.user?.id).catch(e => console.warn('Persona fetch failed', e))
     
-    // 4. Connect WS in background for realtime updates
-    // Non-blocking call
-    connect()
+    // 4. Background: Connect WS (non-blocking)
+    // IMPORTANT: Check if WS is already connected for THIS forum
+    // If not, connect. If yes, maybe just refresh messages?
+    // connect() inside useForumWebSocket already handles idempotency
+    try {
+        await connect()
+    } catch (e) {
+        console.error('WS Connect error:', e)
+    }
+
   } catch (e) {
     console.error('Failed to load forum details', e)
-    // Even if load fails, allow navigation back
+  } finally {
+    if (isMounted) {
+      forumStore.loading = false
+    }
   }
 })
 
-onUnmounted(() => {
-  disconnect()
-  // forumStore.leaveForum() // <-- REMOVED THIS
-  // We want to KEEP the state when navigating away, so when we come back, it's instant.
-  // The fetchForum logic handles "switching" to a new forum properly.
-  // leaveForum was clearing messages/currentForum which caused the "white screen" flash or state loss.
-})
+// Remove the separate onUnmounted hook to avoid double cleanup/disconnect
+// onUnmounted(() => {
+//   disconnect()
+// })
 
 const handleDelete = async () => {
     try {
@@ -171,15 +181,22 @@ const handleDelete = async () => {
         message.success('论坛已删除')
         router.push('/forums')
     } catch (e: any) {
-        message.error('删除失败')
+        // If 404, it's already deleted
+        if (e.response && e.response.status === 404) {
+             message.success('论坛已删除')
+             router.push('/forums')
+        } else {
+             message.error('删除失败')
+        }
     }
 }
 
 const handleStart = async () => {
+    if (!forumStore.currentForum) return
+    
     starting.value = true
     try {
         // Ensure WebSocket is connected BEFORE starting the forum task
-        // This ensures we catch the very first "System Log" messages
         if (!isConnected.value) {
             await connect()
         }
@@ -190,6 +207,15 @@ const handleStart = async () => {
         console.error('Start failed', e)
     } finally {
         starting.value = false
+    }
+}
+
+const handleStop = async () => {
+    if (!forumStore.currentForum) return
+    try {
+        await forumStore.stopForum(forumId)
+    } catch (e) {
+        console.error('Stop failed', e)
     }
 }
 </script>

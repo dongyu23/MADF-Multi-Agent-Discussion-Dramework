@@ -132,6 +132,65 @@ class RealGodAgent:
                 except Exception as e:
                     logger.warning(f"SerpApi failed, falling back to DDG: {e}")
 
+            # 2. Try ZhipuAI Web Search if configured (New!)
+            # Replaces DDG/SerpApi as preferred method if key exists, as requested by user
+            try:
+                zhipu_key = settings.final_api_key
+                # Only use if no SERPAPI key provided, or as primary fallback before DDG
+                # User asked to "Change to GLM search API", so we prioritize it or add it.
+                if zhipu_key:
+                     logger.info(f"Searching with ZhipuAI Web Search: {query}")
+                     try:
+                         # Using ZhipuAI Web Search API
+                         # POST https://open.bigmodel.cn/api/paas/v4/web_search
+                         url = "https://open.bigmodel.cn/api/paas/v4/web_search"
+                         headers = {
+                             "Authorization": f"Bearer {zhipu_key}",
+                             "Content-Type": "application/json"
+                         }
+                         # Generate unique request_id
+                         import uuid
+                         import time
+                         request_id = str(uuid.uuid4())
+                         
+                         payload = {
+                             "search_query": query,
+                             "search_engine": "search_std", # search_std is standard
+                             "count": 5,
+                             "request_id": request_id
+                         }
+                         
+                         resp = requests.post(url, headers=headers, json=payload, timeout=10)
+                         
+                         if resp.status_code == 200:
+                             data = resp.json()
+                             # Parse Zhipu Response
+                             # Note: Zhipu API response structure might be complex or wrapped in "data" sometimes?
+                             # Based on user docs: { "search_result": [...] } is top level? No, response example shows "search_result" inside.
+                             # Let's check docs again: "Response ... search_result object[]"
+                             
+                             search_results = data.get("search_result", [])
+                             
+                             if search_results:
+                                 formatted_results = []
+                                 for r in search_results:
+                                     title = r.get("title", "No Title")
+                                     link = r.get("link", "#")
+                                     content = r.get("content", "No Content")
+                                     media = r.get("media", "")
+                                     formatted_results.append(f"Title: {title}\nSource: {media}\nLink: {link}\nSnippet: {content}")
+                                 
+                                 return "\n\n".join(formatted_results)
+                             else:
+                                 logger.warning(f"ZhipuAI search returned no results. Response: {data}")
+                         else:
+                             logger.warning(f"ZhipuAI search failed: {resp.status_code} - {resp.text}")
+                     
+                     except Exception as e:
+                         logger.warning(f"ZhipuAI search exception: {e}")
+            except Exception as e:
+                logger.warning(f"ZhipuAI setup failed: {e}")
+            
             # 2. Fallback to DuckDuckGo (No API Key required)
             logger.info(f"Searching with DuckDuckGo: {query}")
             with DDGS() as ddgs:

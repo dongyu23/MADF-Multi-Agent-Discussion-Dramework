@@ -14,6 +14,7 @@
         :is-self="isSelf(msg)"
         :is-streaming="(msg as any).isStreaming"
         :moderator-id="msg.moderator_id"
+        :thought="msg.thought"
       />
     </div>
     <div ref="bottomRef"></div>

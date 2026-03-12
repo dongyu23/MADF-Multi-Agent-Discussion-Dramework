@@ -42,7 +42,9 @@ onMounted(() => {
 const formatTime = (isoString: string) => {
   if (!isoString) return ''
   const date = new Date(isoString)
-  return date.toLocaleTimeString() + '.' + date.getMilliseconds().toString().padStart(3, '0')
+  // Use 'en-GB' locale for 24-hour format (HH:MM:SS) which is standard for logs
+  // And ensure we render local time correctly
+  return date.toLocaleTimeString('en-GB', { hour12: false }) + '.' + date.getMilliseconds().toString().padStart(3, '0')
 }
 
 const formatJson = (jsonStr: string) => {

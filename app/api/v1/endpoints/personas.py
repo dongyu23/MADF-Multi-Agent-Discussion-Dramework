@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Annotated, Any
 import json
+import logging
 from app.db.session import get_db
 from app.schemas import PersonaCreate, PersonaUpdate, PersonaResponse
 from app.crud import create_persona, get_persona, update_persona, delete_persona
 from app.api.deps import get_current_user
 from app.db.client import fetch_all
 from app.core.cache import cache_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

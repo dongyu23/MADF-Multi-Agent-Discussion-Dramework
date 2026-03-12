@@ -42,25 +42,57 @@ const props = defineProps<{
   status: string
 }>()
 
-const isVisible = computed(() => {
-    return props.status === 'running'
-})
-
-// Watch props to react to changes (especially start time update)
-watchEffect(() => {
-    if (props.status === 'running') {
-        updateTimer()
-    }
-})
-
 const isMinimized = ref(true)
 const isDragging = ref(false)
 const position = ref({ x: window.innerWidth - 60, y: 100 }) // Default initial position
 const remainingSeconds = ref(0)
 const progress = ref(0)
 
+const snapToEdge = () => {
+  // Only snap horizontally
+  const width = isMinimized.value ? 50 : 200
+  const threshold = window.innerWidth / 2
+  
+  if (position.value.x + width / 2 > threshold) {
+    // Snap to right
+    position.value.x = window.innerWidth - width - 20 // 20px margin
+  } else {
+    // Snap to left
+    position.value.x = 20
+  }
+}
+
 // Dragging Logic
 const offset = { x: 0, y: 0 }
+
+const stopDrag = () => {
+  if (!isDragging.value) return
+  isDragging.value = false
+  
+  window.removeEventListener('mousemove', onDrag)
+  window.removeEventListener('touchmove', onDrag)
+  window.removeEventListener('mouseup', stopDrag)
+  window.removeEventListener('touchend', stopDrag)
+  
+  snapToEdge()
+}
+
+const onDrag = (e: MouseEvent | TouchEvent) => {
+  if (!isDragging.value) return
+  
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+  
+  let newX = clientX - offset.x
+  let newY = clientY - offset.y
+  
+  // Boundary constraints
+  const maxX = window.innerWidth - (isMinimized.value ? 50 : 200)
+  const maxY = window.innerHeight - (isMinimized.value ? 50 : 120)
+  
+  position.value.x = Math.max(0, Math.min(newX, maxX))
+  position.value.y = Math.max(0, Math.min(newY, maxY))
+}
 
 const startDrag = (e: MouseEvent | TouchEvent) => {
   // Only allow drag on minimized state or header of maximized state?
@@ -83,50 +115,8 @@ const startDrag = (e: MouseEvent | TouchEvent) => {
   window.addEventListener('touchend', stopDrag)
 }
 
-const onDrag = (e: MouseEvent | TouchEvent) => {
-  if (!isDragging.value) return
-  
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
-  
-  let newX = clientX - offset.x
-  let newY = clientY - offset.y
-  
-  // Boundary constraints
-  const maxX = window.innerWidth - (isMinimized.value ? 50 : 200)
-  const maxY = window.innerHeight - (isMinimized.value ? 50 : 120)
-  
-  position.value.x = Math.max(0, Math.min(newX, maxX))
-  position.value.y = Math.max(0, Math.min(newY, maxY))
-}
-
-const stopDrag = () => {
-  if (!isDragging.value) return
-  isDragging.value = false
-  
-  window.removeEventListener('mousemove', onDrag)
-  window.removeEventListener('touchmove', onDrag)
-  window.removeEventListener('mouseup', stopDrag)
-  window.removeEventListener('touchend', stopDrag)
-  
-  snapToEdge()
-}
-
-const snapToEdge = () => {
-  // Only snap horizontally
-  const width = isMinimized.value ? 50 : 200
-  const threshold = window.innerWidth / 2
-  
-  if (position.value.x + width / 2 > threshold) {
-    // Snap to right
-    position.value.x = window.innerWidth - width - 20 // 20px margin
-  } else {
-    // Snap to left
-    position.value.x = 20
-  }
-}
-
 // Timer Logic
+
 const updateTimer = () => {
   if (!props.startTime || props.status !== 'running') {
     remainingSeconds.value = 0
@@ -145,6 +135,13 @@ const updateTimer = () => {
   const totalSeconds = props.durationMinutes * 60
   progress.value = Math.min(100, Math.max(0, ((totalSeconds - remaining) / totalSeconds) * 100))
 }
+
+// Watch props to react to changes (especially start time update)
+watchEffect(() => {
+    if (props.status === 'running') {
+        updateTimer()
+    }
+})
 
 let timerInterval: number | null = null
 
