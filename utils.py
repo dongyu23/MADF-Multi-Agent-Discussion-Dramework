@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ZhipuAI client with timeout configuration
 client = ZhipuAI(
-    api_key=settings.API_KEY,
+    api_key=settings.final_api_key,
     base_url=settings.BASE_URL
 )
 

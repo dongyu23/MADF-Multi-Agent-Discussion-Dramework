@@ -10,9 +10,6 @@
             <a-button type="primary" ghost @click="showRealGodModal" class="real-god-btn">
               <global-outlined /> 上帝生成真实角色 (联网)
             </a-button>
-            <a-button type="primary" ghost @click="showGodModal">
-              <thunderbolt-outlined /> 调用上帝生成全新智能体
-            </a-button>
             <a-button type="primary" @click="showModal()">
               <plus-outlined /> 创建智能体
             </a-button>
@@ -147,10 +144,6 @@
       </a-tabs>
     </div>
 
-    <GodAgentModal
-      v-model:open="godModalVisible"
-    />
-
     <RealGodAgentModal
       v-model:open="realGodModalVisible"
     />
@@ -246,13 +239,11 @@
 import { onMounted, reactive, ref, computed, createVNode } from 'vue'
 import { usePersonaStore, type Persona } from '@/stores/persona'
 import { message, Modal } from 'ant-design-vue'
-import GodAgentModal from '@/components/god/GodAgentModal.vue'
 import RealGodAgentModal from '@/components/god/RealGodAgentModal.vue'
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  ThunderboltOutlined,
   EyeOutlined,
   GlobalOutlined,
   MoreOutlined,
@@ -262,7 +253,6 @@ import {
 const personaStore = usePersonaStore()
 const visible = ref(false)
 const detailsVisible = ref(false)
-const godModalVisible = ref(false)
 const realGodModalVisible = ref(false)
 const submitting = ref(false)
 const editingId = ref<number | null>(null)
@@ -389,10 +379,6 @@ const showDeleteConfirm = (persona: Persona) => {
 const showDetails = (persona: Persona) => {
   currentPersona.value = persona
   detailsVisible.value = true
-}
-
-const showGodModal = () => {
-    godModalVisible.value = true
 }
 
 const showRealGodModal = () => {

@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.schemas import PersonaResponse, GodGenerateRequest, PersonaCreate
 from app.crud import create_persona
 from app.api.deps import get_current_user
-from app.agent.god import God
+# from app.agent.god import God  # Deprecated
 from app.agent.real_god import RealGodAgent
 from app.core.async_utils import async_generator_wrapper
 from app.core.cache import cache_service
@@ -17,50 +17,19 @@ from app.services.persona_service import persona_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-god = God()
+# god = God() # Deprecated
 
-@router.post("/generate", response_model=List[PersonaResponse])
-def generate_personas(
-    request: GodGenerateRequest,
-    current_user: Annotated[Any, Depends(get_current_user)],
-    db: Any = Depends(get_db)
-):
-    """
-    Generate personas based on natural language prompt using the God agent.
-    """
-    try:
-        # First determine the count N using LLM
-        n = god.get_persona_count(request.prompt, default_n=request.n)
-        
-        # Generate personas using the God agent
-        generated_data = god.generate_personas(request.prompt, n=n)
-        
-        if not generated_data:
-            raise HTTPException(status_code=500, detail="Failed to generate personas from prompt")
-            
-        created_personas = []
-        for p_data in generated_data:
-            # Use unified service
-            try:
-                saved_p = persona_service.save_generated_persona(current_user.id, p_data, db=db)
-                if saved_p:
-                    created_personas.append(saved_p)
-                else:
-                    logger.error(f"Failed to save persona: {p_data.get('name')}")
-            except Exception as e:
-                logger.error(f"Error saving persona: {e}")
-                continue
-                
-        if not created_personas:
-             raise HTTPException(status_code=500, detail="Failed to save any generated personas")
-        
-        # No need to invalidate cache here, service does it per persona, but doing it again is harmless
-        # cache_service.delete_keys_pattern(f"personas:list:{current_user.id}:*")
-             
-        return created_personas
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"God agent error: {str(e)}")
+# @router.post("/generate", response_model=List[PersonaResponse])
+# def generate_personas(
+#     request: GodGenerateRequest,
+#     current_user: Annotated[Any, Depends(get_current_user)],
+#     db: Any = Depends(get_db)
+# ):
+#     """
+#     Generate personas based on natural language prompt using the God agent.
+#     DEPRECATED: Use /generate_real instead.
+#     """
+#     raise HTTPException(status_code=410, detail="This endpoint is deprecated. Use RealGodAgent.")
 
 @router.post("/generate_real")
 async def generate_real_personas(

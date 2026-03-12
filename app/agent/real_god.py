@@ -4,6 +4,7 @@ import requests
 from typing import List, Dict, Any, Generator, Tuple, Optional
 from utils import get_chat_completion, parse_json_from_response
 from app.core.config import settings
+from zhipuai import ZhipuAI
 
 # ==========================================
 # Prompts
@@ -81,15 +82,10 @@ import logging
 import asyncio
 from datetime import datetime
 from app.core.config import settings
-from duckduckgo_search import DDGS
 from utils import get_chat_completion
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Search Configuration
-# Removed static assignment to allow dynamic settings lookup
-# SERPAPI_API_KEY = settings.SERPAPI_API_KEY
 
 class RealGodAgent:
     def __init__(self, max_steps: int = 10):
@@ -98,111 +94,61 @@ class RealGodAgent:
 
     def search(self, query: str) -> str:
         """
-        Perform web search using SerpApi (primary) or DuckDuckGo (fallback).
-        Synchronous method to match run() generator.
+        Perform web search using ZhipuAI Web Search API via SDK.
         """
         # Ensure we use the latest configuration (e.g. from environment)
-        current_serpapi_key = settings.SERPAPI_API_KEY
+        current_api_key = settings.final_api_key
         
         try:
-            # 1. Try SerpApi if key is available
-            if current_serpapi_key:
-                logger.info(f"Searching with SerpApi: {query}")
-                try:
-                    params = {
-                        "engine": "google",
-                        "q": query,
-                        "api_key": current_serpapi_key,
-                        "num": 5
-                    }
-                    response = requests.get("https://serpapi.com/search", params=params, timeout=10)
-                    if response.status_code == 200:
-                        data = response.json()
-                        organic_results = data.get("organic_results", [])
-                        if organic_results:
-                            formatted_results = []
-                            for r in organic_results:
-                                title = r.get("title", "No Title")
-                                link = r.get("link", "#")
-                                snippet = r.get("snippet", "No Snippet")
-                                formatted_results.append(f"Title: {title}\nLink: {link}\nSnippet: {snippet}")
-                            return "\n\n".join(formatted_results)
-                    else:
-                        logger.warning(f"SerpApi returned status {response.status_code}: {response.text}")
-                except Exception as e:
-                    logger.warning(f"SerpApi failed, falling back to DDG: {e}")
+            if not current_api_key:
+                return "Error: API_KEY is not set."
 
-            # 2. Try ZhipuAI Web Search if configured (New!)
-            # Replaces DDG/SerpApi as preferred method if key exists, as requested by user
-            try:
-                zhipu_key = settings.final_api_key
-                # Only use if no SERPAPI key provided, or as primary fallback before DDG
-                # User asked to "Change to GLM search API", so we prioritize it or add it.
-                if zhipu_key:
-                     logger.info(f"Searching with ZhipuAI Web Search: {query}")
-                     try:
-                         # Using ZhipuAI Web Search API
-                         # POST https://open.bigmodel.cn/api/paas/v4/web_search
-                         url = "https://open.bigmodel.cn/api/paas/v4/web_search"
-                         headers = {
-                             "Authorization": f"Bearer {zhipu_key}",
-                             "Content-Type": "application/json"
-                         }
-                         # Generate unique request_id
-                         import uuid
-                         import time
-                         request_id = str(uuid.uuid4())
-                         
-                         payload = {
-                             "search_query": query,
-                             "search_engine": "search_std", # search_std is standard
-                             "count": 5,
-                             "request_id": request_id
-                         }
-                         
-                         resp = requests.post(url, headers=headers, json=payload, timeout=10)
-                         
-                         if resp.status_code == 200:
-                             data = resp.json()
-                             # Parse Zhipu Response
-                             # Note: Zhipu API response structure might be complex or wrapped in "data" sometimes?
-                             # Based on user docs: { "search_result": [...] } is top level? No, response example shows "search_result" inside.
-                             # Let's check docs again: "Response ... search_result object[]"
-                             
-                             search_results = data.get("search_result", [])
-                             
-                             if search_results:
-                                 formatted_results = []
-                                 for r in search_results:
-                                     title = r.get("title", "No Title")
-                                     link = r.get("link", "#")
-                                     content = r.get("content", "No Content")
-                                     media = r.get("media", "")
-                                     formatted_results.append(f"Title: {title}\nSource: {media}\nLink: {link}\nSnippet: {content}")
-                                 
-                                 return "\n\n".join(formatted_results)
-                             else:
-                                 logger.warning(f"ZhipuAI search returned no results. Response: {data}")
-                         else:
-                             logger.warning(f"ZhipuAI search failed: {resp.status_code} - {resp.text}")
-                     
-                     except Exception as e:
-                         logger.warning(f"ZhipuAI search exception: {e}")
-            except Exception as e:
-                logger.warning(f"ZhipuAI setup failed: {e}")
+            logger.info(f"Searching with ZhipuAI Web Search: {query}")
             
-            # 2. Fallback to DuckDuckGo (No API Key required)
-            logger.info(f"Searching with DuckDuckGo: {query}")
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=5))
-                if results:
-                    formatted_results = []
-                    for r in results:
-                        formatted_results.append(f"Title: {r['title']}\nLink: {r['href']}\nSnippet: {r['body']}")
-                    return "\n\n".join(formatted_results)
+            # Initialize ZhipuAI client (simulating 'zai' usage as requested)
+            client = ZhipuAI(api_key=current_api_key)
             
-            return "No search results found."
+            # Call web_search as per user sample
+            response = client.web_search.web_search(
+                search_engine="std",
+                search_query=query,
+                count=5, 
+                search_recency_filter="noLimit",
+                content_size="high"
+            )
             
+            
+            search_results = []
+            if isinstance(response, dict):
+                 search_results = response.get("search_result", [])
+            elif hasattr(response, "search_result"):
+                 search_results = response.search_result
+            else:
+                 # Fallback/Debug
+                 logger.warning(f"Unknown response format: {response}")
+                 return f"Search returned unknown format: {response}"
+
+            if search_results:
+                formatted_results = []
+                for r in search_results:
+                    # Handle both dict and object access if possible
+                    if isinstance(r, dict):
+                        title = r.get("title", "No Title")
+                        link = r.get("link", "#")
+                        content = r.get("content", "No Content")
+                        media = r.get("media", "")
+                    else:
+                        title = getattr(r, "title", "No Title")
+                        link = getattr(r, "link", "#")
+                        content = getattr(r, "content", "No Content")
+                        media = getattr(r, "media", "")
+                        
+                    formatted_results.append(f"Title: {title}\nSource: {media}\nLink: {link}\nSnippet: {content}")
+                
+                return "\n\n".join(formatted_results)
+            else:
+                return "No search results found."
+
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return f"Search error: {str(e)}"
@@ -414,12 +360,6 @@ class RealGodAgent:
                         character_history.append({"role": "user", "content": f"Observation: {obs}"})
                         continue
 
-                    # Deduplication Check
-                    if query in self.searched_queries:
-                        obs = f"系统提示：你已经搜索过 '{query}' 了。请尝试不同的关键词，或者如果信息足够，请直接 Finish。"
-                        yield {"type": "observation", "content": obs}
-                        character_history.append({"role": "user", "content": f"Observation: {obs}"})
-                        continue
                         
                     self.searched_queries.add(query)
                     search_count += 1
