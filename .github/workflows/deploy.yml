@@ -27,5 +27,4 @@ jobs:
           context: .
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/madf:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/madf:buildcache,mode=max
+          no-cache: true
