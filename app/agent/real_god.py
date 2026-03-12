@@ -429,12 +429,20 @@ class RealGodAgent:
         action = None
         
         # Regex for Thought
-        thought_match = re.search(r"Thought:\s*(.*?)(?=\nAction:|$)", text, re.DOTALL)
+        # 优化：支持中文冒号，支持 Action 位于新行或同一行
+        thought_match = re.search(r"(?:Thought|思考)[:：]\s*(.*?)(?=\n(?:Action|行动)[:：]|$)", text, re.DOTALL | re.IGNORECASE)
         if thought_match:
             thought = thought_match.group(1).strip()
+        else:
+            # 如果没有找到明确的 Thought 标记，但有 Action 标记，
+            # 那么 Action 之前的所有内容都可以被视为 Thought
+            action_start_match = re.search(r"(?:Action|行动)[:：]", text, re.IGNORECASE)
+            if action_start_match:
+                thought = text[:action_start_match.start()].strip()
             
         # Regex for Action
-        action_match = re.search(r"Action:\s*(.*?)$", text, re.DOTALL)
+        # 优化：支持中文冒号，确保能够匹配到行尾
+        action_match = re.search(r"(?:Action|行动)[:：]\s*(.*?)$", text, re.DOTALL | re.IGNORECASE)
         if action_match:
             action = action_match.group(1).strip()
         else:
