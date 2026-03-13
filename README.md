@@ -255,3 +255,9 @@ npm run dev
   - A: 系统使用 GLM 联网搜索获取真实信息，首次生成需要一定时间进行网络请求和内容解析，请耐心等待。
 - **Q: WebSocket 连接失败？**
   - A: 请确保没有防火墙或代理软件拦截 `ws://localhost:8000` 的连接。
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
