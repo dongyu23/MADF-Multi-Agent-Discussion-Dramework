@@ -6,6 +6,9 @@
         <p class="page-subtitle">管理与配置可参与讨论的虚拟智能体实体。</p>
       </div>
       <div class="header-right">
+        <a-button @click="handleCreatePresets" :loading="creatingPresets" size="large" class="preset-btn" style="margin-right: 12px;">
+          <thunderbolt-outlined /> 一键生成预设库
+        </a-button>
         <a-button type="primary" size="large" @click="showCreateModal" class="create-btn">
           <plus-outlined /> 新建智能体
         </a-button>
@@ -60,7 +63,7 @@
     <!-- Create/Edit Modal -->
     <a-drawer
       v-model:open="isModalVisible"
-      :title="editingId ? '编辑智能体配置' : '新建智能体配置'"
+      :title="editingId ? '编辑智能体配置' : '新建自定义智能体配置'"
       width="500"
       placement="right"
       :footer-style="{ textAlign: 'right' }"
@@ -122,7 +125,7 @@ import { usePersonaStore } from '@/stores/persona'
 import { useAuthStore } from '@/stores/auth'
 import { message } from 'ant-design-vue'
 import { 
-  PlusOutlined, 
+  PlusOutlined, ThunderboltOutlined, 
   TeamOutlined, 
   DeleteOutlined,
   ApiOutlined,
@@ -135,6 +138,19 @@ const authStore = useAuthStore()
 const isModalVisible = ref(false)
 const saving = ref(false)
 const editingId = ref<string | null>(null)
+const creatingPresets = ref(false)
+
+const handleCreatePresets = async () => {
+  try {
+    creatingPresets.value = true
+    await personaStore.createPresetPersonas()
+    message.success('预设智能体生成成功')
+  } catch (error: any) {
+    message.error(error.message || '生成失败')
+  } finally {
+    creatingPresets.value = false
+  }
+}
 
 const formState = reactive({
   name: '',
@@ -437,5 +453,21 @@ onMounted(() => {
   .persona-grid {
     grid-template-columns: 1fr;
   }
+}
+</style>
+
+<style scoped>
+.preset-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }
 </style>
