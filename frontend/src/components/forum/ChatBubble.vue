@@ -90,104 +90,159 @@ const avatarColor = computed(() => {
 </script>
 
 <style scoped>
-.message-item {
+.chat-bubble-container {
   display: flex;
   margin-bottom: 24px;
-  gap: 12px;
+  width: 100%;
+  animation: fadeIn 0.4s ease-out;
 }
 
-.message-self {
-  flex-direction: row-reverse;
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.message-content-wrapper {
-  max-width: 70%;
+.is-system {
+  justify-content: center;
+}
+
+.is-self {
+  justify-content: flex-end;
+}
+
+.system-message {
+  background: rgba(212, 175, 55, 0.05);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  color: #D4AF37;
+  padding: 8px 24px;
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  max-width: 80%;
+  text-align: center;
+}
+
+.message-content {
   display: flex;
   flex-direction: column;
+  max-width: 75%;
 }
 
-.message-self .message-content-wrapper {
+.is-self .message-content {
   align-items: flex-end;
 }
 
-.message-info {
-  margin-bottom: 4px;
-  font-size: 12px;
-  color: #8c8c8c;
+.message-header {
   display: flex;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.message-self .message-info {
-  text-align: right;
+.is-self .message-header {
   flex-direction: row-reverse;
 }
 
-.message-info .time {
-  margin-left: 8px;
+.sender-name {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 18px;
+  font-weight: bold;
+  color: #D4AF37;
+  letter-spacing: 1px;
+}
+
+.sender-role {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 9px;
+  padding: 2px 6px;
+  border: 1px solid #1890ff;
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
+  text-transform: uppercase;
+}
+
+.message-time {
+  font-family: 'Azeret Mono', monospace;
   font-size: 10px;
+  color: #666;
 }
 
-.message-self .message-info .time {
-  margin-left: 0;
-  margin-right: 8px;
-}
-
-.message-bubble {
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  font-size: 14px;
+.message-body {
+  position: relative;
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid #333;
+  padding: 20px 24px;
+  color: #F2E8CF;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 18px;
   line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  border-left: 3px solid #D4AF37;
 }
 
-.message-self .message-bubble {
-  background: #1890ff;
-  color: #fff;
-  border-radius: 8px 0 8px 8px;
-}
-
-.message-item:not(.message-self) .message-bubble {
-  border-radius: 0 8px 8px 8px;
-}
-
-/* Moderator specific styles */
-.message-moderator .message-bubble {
-  background: #fffbe6; /* Light gold background */
-  border: 1px solid #ffe58f;
+.is-self .message-body {
+  background: rgba(212, 175, 55, 0.05);
+  border-left: 1px solid #333;
+  border-right: 3px solid #D4AF37;
 }
 
 .thought-process {
-    margin-bottom: 8px;
-    font-size: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed #333;
+}
+
+.thought-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #888;
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  margin-bottom: 8px;
 }
 
 .thought-content {
-    background: rgba(0, 0, 0, 0.03);
-    padding: 8px;
-    border-radius: 4px;
-    margin-top: 4px;
-    color: #666;
-    font-style: italic;
-    white-space: pre-wrap;
+  font-family: 'Azeret Mono', monospace;
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+  background: rgba(0,0,0,0.3);
+  padding: 12px;
+  border-left: 2px solid #555;
 }
 
-.thought-divider {
-    border-bottom: 1px dashed rgba(0, 0, 0, 0.1);
-    margin: 8px 0;
+.markdown-content {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
-/* Customize collapse header style */
-:deep(.ant-collapse-header) {
-    padding: 0 !important;
-    font-size: 12px !important;
-    color: #999 !important;
+.markdown-content :deep(p) {
+  margin-bottom: 1em;
 }
 
-:deep(.ant-collapse-content-box) {
-    padding: 0 !important;
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(pre) {
+  background: #050505 !important;
+  border: 1px solid #333 !important;
+  border-radius: 0 !important;
+  font-family: 'Azeret Mono', monospace !important;
+  padding: 16px !important;
+}
+
+.markdown-content :deep(code) {
+  font-family: 'Azeret Mono', monospace !important;
+  color: #D4AF37;
+  background: rgba(0,0,0,0.3);
+  padding: 2px 4px;
+}
+
+.markdown-content :deep(pre code) {
+  color: #a6e22e;
+  background: transparent;
+  padding: 0;
 }
 </style>

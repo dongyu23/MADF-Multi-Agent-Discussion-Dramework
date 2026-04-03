@@ -249,14 +249,16 @@ const handleDelete = async (id: number) => {
 .forum-list-page {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 24px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 16px;
 }
 
 .header-title {
@@ -265,32 +267,41 @@ const handleDelete = async (id: number) => {
 }
 
 .title {
-  font-size: 24px;
-  font-weight: 500;
-  color: rgba(0,0,0,0.85);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 36px;
+  font-weight: bold;
+  color: #D4AF37;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 .subtitle {
+  font-family: 'Azeret Mono', monospace;
   font-size: 14px;
-  color: rgba(0,0,0,0.45);
+  color: #888;
   margin-top: 4px;
+  letter-spacing: 1px;
 }
 
 .forum-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 24px;
 }
 
 .forum-card {
-  border-radius: 8px;
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid #222;
+  border-top: 2px solid #D4AF37 !important;
+  border-radius: 0;
   transition: all 0.3s;
   cursor: pointer;
 }
 
 .forum-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: #D4AF37;
+  box-shadow: 0 5px 20px rgba(212, 175, 55, 0.15);
+  transform: translateY(-2px);
 }
 
 .card-title {
@@ -299,31 +310,68 @@ const handleDelete = async (id: number) => {
   align-items: center;
 }
 
-.card-title .topic {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-right: 8px;
+.topic {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 20px;
+  font-weight: bold;
+  color: #F2E8CF;
 }
 
-.card-desc {
-  margin-top: 8px;
+.description {
+  font-family: 'Azeret Mono', monospace;
   font-size: 12px;
+  color: #888;
+  margin-top: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.card-footer {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+.meta-info {
   display: flex;
-  justify-content: flex-end;
-  color: #1890ff;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  color: #666;
 }
 
 .empty-state {
-  grid-column: 1 / -1;
-  padding: 48px 0;
   text-align: center;
+  padding: 60px;
+  background: rgba(0,0,0,0.2);
+  border: 1px dashed #333;
+}
+
+:deep(.ant-modal-content) {
+  background: #111 !important;
+  border: 1px solid #D4AF37 !important;
+  border-radius: 0 !important;
+}
+
+:deep(.ant-modal-header) {
+  background: transparent !important;
+  border-bottom: 1px solid #333 !important;
+}
+
+:deep(.ant-modal-title) {
+  color: #D4AF37 !important;
+  font-family: 'Cormorant Garamond', serif !important;
+  font-size: 24px !important;
+  letter-spacing: 2px !important;
+}
+
+:deep(.ant-modal-close-x) {
+  color: #D4AF37 !important;
+}
+
+:deep(.ant-form-item-label > label) {
+  color: #888 !important;
+  font-family: 'Azeret Mono', monospace !important;
+  font-size: 12px !important;
+  letter-spacing: 1px;
 }
 </style>

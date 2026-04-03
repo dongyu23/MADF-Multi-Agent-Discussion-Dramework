@@ -388,22 +388,18 @@ const showRealGodModal = () => {
 
 <style scoped>
 .persona-page {
-  height: 100%;
-  overflow-y: auto;
-  width: 100%;
-}
-
-.persona-content-wrapper {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 32px 24px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 16px;
 }
 
 .header-title {
@@ -412,182 +408,136 @@ const showRealGodModal = () => {
 }
 
 .title {
-  font-size: 24px;
-  font-weight: 500;
-  color: rgba(0,0,0,0.85);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 36px;
+  font-weight: bold;
+  color: #D4AF37;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 .subtitle {
+  font-family: 'Azeret Mono', monospace;
   font-size: 14px;
-  color: rgba(0,0,0,0.45);
+  color: #888;
   margin-top: 4px;
+  letter-spacing: 1px;
 }
 
 .persona-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(200px, 1fr);
-  gap: 16px;
-  padding-bottom: 0;
-  height: 100%;
-}
-
-.persona-grid-container {
-  height: calc(100vh - 280px);
-  display: flex;
-  flex-direction: column;
-}
-
-.pagination-wrapper {
-  margin-top: 16px;
-  padding-top: 0;
-  text-align: center;
-  width: 100%;
-  flex-shrink: 0;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
 }
 
 .persona-card {
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid #222;
+  border-top: 2px solid #D4AF37 !important;
+  border-radius: 0;
   transition: all 0.3s;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.persona-card :deep(.ant-card-body) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  overflow: hidden;
 }
 
 .persona-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-color: #D4AF37;
+  box-shadow: 0 5px 20px rgba(212, 175, 55, 0.15);
+  transform: translateY(-2px);
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.user-info {
+.card-title {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
+  gap: 16px;
 }
 
-.name-title {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
+.persona-avatar {
+  background: #111;
+  border: 1px solid #D4AF37;
+  color: #D4AF37;
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: bold;
 }
 
 .name {
-  font-size: 16px;
-  font-weight: 500;
-  color: rgba(0,0,0,0.85);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 20px;
+  font-weight: bold;
+  color: #F2E8CF;
+  letter-spacing: 1px;
 }
 
-.title {
+.persona-desc {
+  font-family: 'Azeret Mono', monospace;
   font-size: 12px;
-  color: rgba(0,0,0,0.45);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.actions {
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.persona-content {
-  margin-top: 0;
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.bio {
-  color: rgba(0,0,0,0.45);
-  font-size: 13px;
-  flex: 1;
+  color: #888;
+  margin-top: 16px;
+  line-height: 1.6;
+  height: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
-  margin-bottom: 8px;
-  min-height: 0;
-}
-
-.stance {
-  font-size: 13px;
-  color: rgba(0,0,0,0.65);
-  margin-bottom: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .tags {
+  margin-top: 16px;
   display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  overflow: hidden;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.tags :deep(.ant-tag) {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: top;
+.type-tag {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 10px;
+  border: 1px solid #4CAF50;
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+  padding: 2px 6px;
 }
 
-.empty-state {
-  grid-column: 1 / -1;
-  padding: 48px 0;
-  text-align: center;
+.model-tag {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 10px;
+  border: 1px solid #1890ff;
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
+  padding: 2px 6px;
 }
 
-.table-text-ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-  width: 100%;
-  display: block;
+:deep(.ant-modal-content) {
+  background: #111 !important;
+  border: 1px solid #D4AF37 !important;
+  border-radius: 0 !important;
 }
 
-.table-tags {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  overflow: hidden;
+:deep(.ant-modal-header) {
+  background: transparent !important;
+  border-bottom: 1px solid #333 !important;
 }
 
-.table-tags :deep(.ant-tag) {
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: top;
+:deep(.ant-modal-title) {
+  color: #D4AF37 !important;
+  font-family: 'Cormorant Garamond', serif !important;
+  font-size: 24px !important;
+  letter-spacing: 2px !important;
+}
+
+:deep(.ant-modal-close-x) {
+  color: #D4AF37 !important;
+}
+
+:deep(.ant-form-item-label > label) {
+  color: #888 !important;
+  font-family: 'Azeret Mono', monospace !important;
+  font-size: 12px !important;
+  letter-spacing: 1px;
+}
+
+.form-item-tip {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
 }
 </style>

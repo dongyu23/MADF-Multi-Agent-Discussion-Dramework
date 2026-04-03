@@ -56,25 +56,66 @@ defineExpose({ scrollToBottom })
 </script>
 
 <style scoped>
-.chat-area {
+.message-list-container {
   flex: 1;
-  background: #f5f5f5;
-  padding: 24px;
   overflow-y: auto;
-  position: relative; /* Create stacking context for loading overlay */
-  z-index: 1; /* Lower than header */
+  padding: 32px 24px;
+  background: transparent;
+  scroll-behavior: smooth;
+  position: relative;
 }
 
-.loading-state {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+/* Custom scrollbar for the cyber feel */
+.message-list-container::-webkit-scrollbar {
+  width: 6px;
+}
+.message-list-container::-webkit-scrollbar-track {
+  background: #0B0B0C;
+  border-left: 1px solid #222;
+}
+.message-list-container::-webkit-scrollbar-thumb {
+  background: #D4AF37;
+}
+
+.messages-wrapper {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.8);
-  z-index: 10;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.loading-indicator {
+  text-align: center;
+  padding: 40px;
+  font-family: 'Azeret Mono', monospace;
+  color: #D4AF37;
+  letter-spacing: 2px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px;
+  color: #888;
+  font-family: 'Azeret Mono', monospace;
+  border: 1px dashed #333;
+  margin-top: 40px;
+}
+
+.typing-indicator {
+  padding: 16px;
+  border-left: 2px solid #D4AF37;
+  background: rgba(15, 15, 20, 0.8);
+  font-family: 'Azeret Mono', monospace;
+  font-size: 12px;
+  color: #888;
+  margin-top: 16px;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
 }
 </style>

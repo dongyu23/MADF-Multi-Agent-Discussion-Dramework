@@ -1,9 +1,10 @@
 <template>
   <div class="auth-wrapper">
-    <a-card :bordered="false" class="auth-card">
+    <div class="cyber-box">
       <div class="auth-header">
-        <div class="auth-title">注册</div>
-        <div class="auth-subtitle">加入 MADF，开启智能协作之旅</div>
+        <h1 class="auth-title">I N I T I A T E</h1>
+        <div class="auth-subtitle">CONSTRUCT NEW ENTITY PROFILE</div>
+        <div class="glow-divider"></div>
       </div>
 
       <a-alert
@@ -12,7 +13,7 @@
         type="error"
         show-icon
         closable
-        style="margin-bottom: 24px"
+        class="cyber-alert"
         @close="authStore.error = null"
       />
 
@@ -25,48 +26,54 @@
       >
         <a-form-item
           name="username"
-          :rules="[{ required: true, message: '请输入用户名' }]"
+          class="cyber-form-item"
+          :rules="[{ required: true, message: 'DESIGNATION REQUIRED' }]"
         >
           <a-input
             v-model:value="formState.username"
             size="large"
-            placeholder="用户名"
+            placeholder="[ SET_DESIGNATION ]"
+            class="cyber-input"
           >
             <template #prefix>
-              <user-outlined style="color: rgba(0,0,0,.25)" />
+              <span class="prefix-icon">_></span>
             </template>
           </a-input>
         </a-form-item>
 
         <a-form-item
           name="password"
-          :rules="[{ required: true, message: '请输入密码' }]"
+          class="cyber-form-item"
+          :rules="[{ required: true, message: 'CIPHER REQUIRED' }]"
         >
           <a-input-password
             v-model:value="formState.password"
             size="large"
-            placeholder="密码"
+            placeholder="[ SET_CIPHER ]"
+            class="cyber-input"
           >
             <template #prefix>
-              <lock-outlined style="color: rgba(0,0,0,.25)" />
+              <span class="prefix-icon">***</span>
             </template>
           </a-input-password>
         </a-form-item>
 
         <a-form-item
           name="confirmPassword"
+          class="cyber-form-item"
           :rules="[
-            { required: true, message: '请确认密码' },
+            { required: true, message: 'CONFIRM CIPHER' },
             { validator: validateConfirmPassword }
           ]"
         >
           <a-input-password
             v-model:value="formState.confirmPassword"
             size="large"
-            placeholder="确认密码"
+            placeholder="[ CONFIRM_CIPHER ]"
+            class="cyber-input"
           >
             <template #prefix>
-              <lock-outlined style="color: rgba(0,0,0,.25)" />
+              <span class="prefix-icon">***</span>
             </template>
           </a-input-password>
         </a-form-item>
@@ -80,31 +87,32 @@
             :loading="authStore.loading"
             class="submit-btn"
           >
-            注册
+            <span class="btn-text">INITIALIZE</span>
           </a-button>
         </a-form-item>
 
         <div class="auth-footer">
-          <span>已有账号？</span>
-          <router-link to="/auth/login" class="link-btn">立即登录</router-link>
+          <span class="footer-text">KNOWN ENTITY?</span>
+          <router-link to="/auth/login" class="link-btn">[ AUTHENTICATE ]</router-link>
         </div>
 
         <div class="disclaimer">
-          <a-divider style="margin: 16px 0; font-size: 12px; color: #999;">风险声明</a-divider>
-          <p>
-            <warning-outlined /> 本系统生成的 AI 角色发言可能包含错误、误导性信息或虚构内容，不代表真实人物观点。
-            本平台内容仅供学术研究与娱乐演示，请勿作为专业建议。用户需自行甄别信息真伪，使用本服务产生的风险与后果由用户自行承担。
+          <div class="warning-line"></div>
+          <p class="warning-text">
+            <warning-outlined style="color: #e63946; margin-right: 8px;" />
+            WARNING: CONSTRUCTED PERSONAS MAY HALLUCINATE OR DEVIATE FROM HISTORICAL ACCURACY. 
+            ENTER AT YOUR OWN EXISTENTIAL RISK.
           </p>
         </div>
       </a-form>
-    </a-card>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { UserOutlined, LockOutlined, WarningOutlined } from '@ant-design/icons-vue'
+import { WarningOutlined } from '@ant-design/icons-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 
 const authStore = useAuthStore()
@@ -116,7 +124,7 @@ const formState = reactive({
 
 const validateConfirmPassword = async (_rule: Rule, value: string) => {
   if (value !== formState.password) {
-    return Promise.reject('两次输入的密码不一致')
+    return Promise.reject('CIPHER MISMATCH DETECTED')
   }
   return Promise.resolve()
 }
@@ -132,78 +140,202 @@ const onFinish = async (values: any) => {
   justify-content: center;
   align-items: center;
   width: 100%;
+  min-height: 100vh;
+  background: radial-gradient(circle at center, #1a1a24 0%, #0b0b0c 100%);
+  position: relative;
+  z-index: 1;
 }
 
-.auth-card {
-  width: 100%;
-  max-width: 400px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  padding: 24px;
+.auth-wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(212, 175, 55, 0.03) 2px,
+    rgba(212, 175, 55, 0.03) 4px
+  );
+  z-index: -1;
 }
+
+.cyber-box {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(15, 15, 20, 0.85);
+  border: 1px solid #D4AF37;
+  padding: 40px;
+  position: relative;
+  box-shadow: 0 0 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(212, 175, 55, 0.05);
+  backdrop-filter: blur(5px);
+}
+
+.cyber-box::before, .cyber-box::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #D4AF37;
+}
+
+.cyber-box::before { top: -2px; left: -2px; border-right: none; border-bottom: none; }
+.cyber-box::after { bottom: -2px; right: -2px; border-left: none; border-top: none; }
 
 .auth-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .auth-title {
-  font-size: 24px;
-  color: rgba(0, 0, 0, 0.85);
-  font-weight: 600;
-  margin-bottom: 8px;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 48px;
+  color: #D4AF37;
+  margin: 0;
+  letter-spacing: 8px;
+  text-shadow: 0 0 15px rgba(212, 175, 55, 0.5);
 }
 
 .auth-subtitle {
-  font-size: 14px;
-  color: rgba(0, 0, 0, 0.45);
+  font-family: 'Azeret Mono', monospace;
+  font-size: 12px;
+  color: #888;
+  letter-spacing: 4px;
+  margin-top: 10px;
 }
 
-.auth-form {
-  margin-bottom: 0;
+.glow-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+  margin-top: 20px;
+  opacity: 0.5;
+}
+
+.cyber-form-item {
+  margin-bottom: 24px;
+}
+
+:deep(.ant-input-affix-wrapper) {
+  background: rgba(0,0,0,0.5) !important;
+  border: 1px solid #333 !important;
+  border-radius: 0 !important;
+  padding: 8px 16px !important;
+}
+
+:deep(.ant-input-affix-wrapper-focused) {
+  border-color: #D4AF37 !important;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2) !important;
+}
+
+:deep(.ant-input) {
+  background: transparent !important;
+  color: #F2E8CF !important;
+  font-family: 'Azeret Mono', monospace !important;
+  letter-spacing: 1px;
+}
+
+:deep(.ant-input::placeholder) {
+  color: #555 !important;
+}
+
+.prefix-icon {
+  color: #D4AF37;
+  font-family: 'Azeret Mono', monospace;
+  font-weight: bold;
+  margin-right: 8px;
 }
 
 .submit-btn {
-  height: 40px;
-  font-size: 16px;
-  margin-top: 8px;
+  height: 50px;
+  background: transparent;
+  border: 1px solid #D4AF37;
+  color: #D4AF37;
+  border-radius: 0;
+  margin-top: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.submit-btn:hover {
+  background: rgba(212, 175, 55, 0.15);
+  color: #FFF;
+  border-color: #FFF;
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+}
+
+.submit-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.submit-btn:hover::before {
+  left: 100%;
 }
 
 .auth-footer {
   text-align: center;
-  font-size: 14px;
-  margin-top: 16px;
-  color: rgba(0, 0, 0, 0.45);
+  margin-top: 24px;
+}
+
+.footer-text {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  color: #666;
 }
 
 .link-btn {
-  color: #1890ff;
-  font-weight: 500;
-  margin-left: 4px;
+  color: #D4AF37;
+  font-family: 'Azeret Mono', monospace;
+  font-size: 11px;
+  margin-left: 8px;
+  text-decoration: none;
+  transition: color 0.3s, text-shadow 0.3s;
 }
 
 .link-btn:hover {
-  text-decoration: underline;
+  color: #FFF;
+  text-shadow: 0 0 8px #D4AF37;
 }
 
 .disclaimer {
-  margin-top: 24px;
-  font-size: 12px;
-  color: #999;
+  margin-top: 40px;
   text-align: center;
-  line-height: 1.5;
 }
 
-.disclaimer p {
+.warning-line {
+  height: 1px;
+  background: #e63946;
+  opacity: 0.3;
+  margin-bottom: 16px;
+}
+
+.warning-text {
+  font-family: 'Azeret Mono', monospace;
+  font-size: 10px;
+  color: #888;
+  line-height: 1.6;
   margin: 0;
 }
 
+.cyber-alert {
+  background: rgba(230, 57, 70, 0.1);
+  border: 1px solid #e63946;
+  border-radius: 0;
+  margin-bottom: 24px;
+}
+
 @media (max-width: 576px) {
-  .auth-card {
+  .cyber-box {
+    border: none;
     box-shadow: none;
-    padding: 0;
-    background: transparent;
+    padding: 20px;
+  }
+  .cyber-box::before, .cyber-box::after {
+    display: none;
   }
 }
 </style>
