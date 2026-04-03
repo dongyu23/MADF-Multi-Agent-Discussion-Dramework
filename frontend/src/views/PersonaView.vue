@@ -431,16 +431,16 @@ const showRealGodModal = () => {
 }
 
 .persona-card {
-  background: rgba(15, 15, 20, 0.85);
-  border: 1px solid #222;
+  background: #1f1f1f;
+  border: 1px solid rgba(255,255,255,0.08);
   
   border-radius: 12px;
   transition: all 0.3s;
 }
 
 .persona-card:hover {
-  border-color: #1890ff;
-  box-shadow: 0 5px 20px rgba(24, 144, 255, 0.15);
+  border-color: rgba(255,255,255,0.15);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
   transform: translateY(-2px);
 }
 

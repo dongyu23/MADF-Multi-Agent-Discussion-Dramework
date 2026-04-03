@@ -111,7 +111,7 @@ const avatarColor = computed(() => {
 }
 
 .system-message {
-  background: rgba(24, 144, 255, 0.05);
+  background: #1677ff;
   border: 1px solid rgba(24, 144, 255, 0.2);
   color: #1890ff;
   padding: 8px 24px;
@@ -169,21 +169,21 @@ const avatarColor = computed(() => {
 
 .message-body {
   position: relative;
-  background: rgba(15, 15, 20, 0.85);
-  border: 1px solid #333;
+  background: #1f1f1f;
+  border: 1px solid rgba(255,255,255,0.08);
   padding: 20px 24px;
-  color: #F2E8CF;
+  color: rgba(255,255,255,0.85);
   font-weight: 600;
   font-size: 18px;
   line-height: 1.6;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-  border-left: 3px solid #1890ff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  
 }
 
 .is-self .message-body {
-  background: rgba(24, 144, 255, 0.05);
+  background: #1677ff;
   border-left: 1px solid #333;
-  border-right: 3px solid #1890ff;
+  
 }
 
 .thought-process {

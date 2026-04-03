@@ -3,47 +3,60 @@
     <a-layout-sider
       v-model:collapsed="collapsed"
       collapsible
-      theme="light"
+      theme="dark"
       breakpoint="lg"
-      :width="220"
+      :width="240"
       class="sider-layout"
     >
       <div class="logo">
-        <span v-if="!collapsed" class="logo-text">MADF 论坛</span>
+        <span v-if="!collapsed" class="logo-text">MADF</span>
         <span v-else class="logo-text">M</span>
       </div>
-      <a-menu :selectedKeys="selectedKeys" theme="light" mode="inline">
+      <a-menu :selectedKeys="selectedKeys" theme="dark" mode="inline">
         <a-menu-item key="dashboard" @click="navigateTo('/dashboard')">
             <dashboard-outlined />
-            <span>概览</span>
+            <span>系统概览</span>
         </a-menu-item>
-        
+
         <a-menu-item key="personas" @click="navigateTo('/personas')">
             <team-outlined />
             <span>智能体工坊</span>
         </a-menu-item>
-        
+
         <a-menu-item key="forums" @click="navigateTo('/forums')">
             <comment-outlined />
             <span>圆桌论坛</span>
         </a-menu-item>
-
-        <a-menu-divider />
-        
-        <a-menu-item key="logout" @click="handleLogout">
-          <logout-outlined />
-          <span>退出登录</span>
-        </a-menu-item>
       </a-menu>
     </a-layout-sider>
-    
+
     <a-layout class="site-layout">
-      <!-- Header removed -->
-      
-      <a-layout-content style="margin: 0; padding: 0; height: 100vh; overflow: hidden;">
-        <div :style="{ padding: '0', background: '#fff', height: '100%' }">
-          <router-view />
+      <a-layout-header class="site-layout-header">
+        <div class="header-left">
+          <!-- Can add breadcrumbs or title here if needed -->
         </div>
+        <div class="header-right">
+          <a-dropdown placement="bottomRight">
+            <div class="user-action">
+              <a-avatar style="background-color: #1677ff">
+                <template #icon><user-outlined /></template>
+              </a-avatar>
+              <span class="username">{{ authStore.user?.username || '用户' }}</span>
+            </div>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="logout" @click="handleLogout">
+                  <logout-outlined />
+                  <span>退出登录</span>
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </div>
+      </a-layout-header>
+
+      <a-layout-content class="site-layout-content">
+        <router-view />
       </a-layout-content>
     </a-layout>
   </a-layout>
@@ -57,7 +70,8 @@ import {
   DashboardOutlined,
   TeamOutlined,
   CommentOutlined,
-  LogoutOutlined
+  LogoutOutlined,
+  UserOutlined
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -67,7 +81,7 @@ const collapsed = ref(false)
 
 const handleLogout = async () => {
   await authStore.logout()
-  router.push('/login')
+  router.push('/auth/login')
 }
 
 const navigateTo = (path: string) => {
@@ -84,33 +98,74 @@ const selectedKeys = computed(() => {
 
 <style scoped>
 .logo {
-  height: 32px;
-  margin: 16px;
-  background: rgba(24, 144, 255, 0.2);
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
   overflow: hidden;
   white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .logo-text {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: bold;
-  color: #1890ff;
+  color: #1677ff;
+  letter-spacing: 1px;
 }
 
 .sider-layout {
-  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
   z-index: 10;
   height: 100vh;
-  overflow-y: auto;
+  box-shadow: 2px 0 8px 0 rgba(0, 0, 0, 0.15);
 }
 
-/* Ensure the layout takes full width */
 .site-layout {
   height: 100vh;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-layout-header {
+  background: #141414;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  z-index: 9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.user-action {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  transition: background 0.3s;
+  height: 64px;
+}
+
+.user-action:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.username {
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.site-layout-content {
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow: auto;
+  background-color: #141414;
 }
 </style>

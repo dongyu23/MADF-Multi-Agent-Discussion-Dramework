@@ -289,9 +289,9 @@ const handleStop = async () => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  background: rgba(15, 15, 20, 0.9);
+  background: #141414;
   border-bottom: 1px solid #D4AF37;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
   backdrop-filter: blur(10px);
   z-index: 10;
 }
@@ -355,7 +355,7 @@ const handleStop = async () => {
 
 .chat-input-area {
   padding: 24px;
-  background: rgba(15, 15, 20, 0.9);
+  background: #141414;
   border-top: 1px solid #D4AF37;
   backdrop-filter: blur(10px);
   z-index: 10;
