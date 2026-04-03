@@ -92,11 +92,11 @@ const onFinish = async (values: any) => {
 <style scoped>
 .auth-box {
   width: 100%;
-  background: #1f1f1f;
+  background: transparent;
   border-radius: 8px;
   padding: 32px 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  
+  
 }
 
 .auth-header {

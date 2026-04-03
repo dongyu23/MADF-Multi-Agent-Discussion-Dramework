@@ -1,64 +1,65 @@
 <template>
-  <a-layout style="min-height: 100vh">
-    <a-layout-sider
-      v-model:collapsed="collapsed"
-      collapsible
-      theme="dark"
-      breakpoint="lg"
-      :width="240"
-      class="sider-layout"
-    >
-      <div class="logo">
-        <span v-if="!collapsed" class="logo-text">MADF</span>
-        <span v-else class="logo-text">M</span>
-      </div>
-      <a-menu :selectedKeys="selectedKeys" theme="dark" mode="inline">
-        <a-menu-item key="dashboard" @click="navigateTo('/dashboard')">
-            <dashboard-outlined />
-            <span>系统概览</span>
-        </a-menu-item>
-
-        <a-menu-item key="personas" @click="navigateTo('/personas')">
-            <team-outlined />
-            <span>智能体工坊</span>
-        </a-menu-item>
-
-        <a-menu-item key="forums" @click="navigateTo('/forums')">
-            <comment-outlined />
-            <span>圆桌论坛</span>
-        </a-menu-item>
-      </a-menu>
-    </a-layout-sider>
-
-    <a-layout class="site-layout">
-      <a-layout-header class="site-layout-header">
-        <div class="header-left">
-          <!-- Can add breadcrumbs or title here if needed -->
+  <a-layout class="madf-layout">
+    <a-layout-header class="madf-header">
+      <div class="header-container">
+        <div class="logo-area" @click="navigateTo('/dashboard')">
+          <div class="logo-icon">M</div>
+          <span class="logo-text">MADF Platform</span>
         </div>
-        <div class="header-right">
-          <a-dropdown placement="bottomRight">
-            <div class="user-action">
-              <a-avatar style="background-color: #1677ff">
+        
+        <a-menu
+          v-model:selectedKeys="selectedKeys"
+          theme="dark"
+          mode="horizontal"
+          class="top-nav-menu"
+          :selectable="false"
+        >
+          <a-menu-item key="dashboard" @click="navigateTo('/dashboard')" :class="{ 'active-menu': isActive('/dashboard') }">
+            <dashboard-outlined /> 控制台
+          </a-menu-item>
+          <a-menu-item key="personas" @click="navigateTo('/personas')" :class="{ 'active-menu': isActive('/personas') }">
+            <team-outlined /> 智能体库
+          </a-menu-item>
+          <a-menu-item key="forums" @click="navigateTo('/forums')" :class="{ 'active-menu': isActive('/forums') }">
+            <comment-outlined /> 讨论空间
+          </a-menu-item>
+        </a-menu>
+
+        <div class="user-area">
+          <a-dropdown placement="bottomRight" :trigger="['click']">
+            <div class="user-profile-btn">
+              <a-avatar size="small" class="user-avatar">
                 <template #icon><user-outlined /></template>
               </a-avatar>
               <span class="username">{{ authStore.user?.username || '用户' }}</span>
+              <down-outlined class="dropdown-icon" />
             </div>
             <template #overlay>
-              <a-menu>
-                <a-menu-item key="logout" @click="handleLogout">
-                  <logout-outlined />
-                  <span>退出登录</span>
+              <a-menu class="user-dropdown-menu">
+                <div class="dropdown-header">
+                  <div class="dropdown-user">{{ authStore.user?.username }}</div>
+                  <div class="dropdown-role">系统操作员</div>
+                </div>
+                <a-menu-divider />
+                <a-menu-item key="logout" @click="handleLogout" class="logout-item">
+                  <logout-outlined /> 退出登录
                 </a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
         </div>
-      </a-layout-header>
+      </div>
+    </a-layout-header>
 
-      <a-layout-content class="site-layout-content">
-        <router-view />
-      </a-layout-content>
-    </a-layout>
+    <a-layout-content class="madf-content">
+      <div class="content-wrapper">
+        <router-view v-slot="{ Component }">
+          <transition name="fade-slide" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </div>
+    </a-layout-content>
   </a-layout>
 </template>
 
@@ -71,13 +72,13 @@ import {
   TeamOutlined,
   CommentOutlined,
   LogoutOutlined,
-  UserOutlined
+  UserOutlined,
+  DownOutlined
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const collapsed = ref(false)
 
 const handleLogout = async () => {
   await authStore.logout()
@@ -85,7 +86,12 @@ const handleLogout = async () => {
 }
 
 const navigateTo = (path: string) => {
-    router.push(path)
+  router.push(path)
+}
+
+const isActive = (path: string) => {
+  if (path === '/dashboard') return route.path === '/' || route.path.startsWith('/dashboard')
+  return route.path.startsWith(path)
 }
 
 const selectedKeys = computed(() => {
@@ -97,75 +103,203 @@ const selectedKeys = computed(() => {
 </script>
 
 <style scoped>
-.logo {
+.madf-layout {
+  min-height: 100vh;
+  background-color: #09090b; /* Very dark background */
+}
+
+.madf-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
   height: 64px;
+  padding: 0;
+  background: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.header-container {
+  max-width: 1440px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  margin-right: 48px;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #1677ff 0%, #36cfc9 100%);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: white;
+  font-weight: 800;
+  font-size: 18px;
+  box-shadow: 0 0 15px rgba(22, 119, 255, 0.3);
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: bold;
-  color: #1677ff;
-  letter-spacing: 1px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.5px;
 }
 
-.sider-layout {
-  z-index: 10;
-  height: 100vh;
-  box-shadow: 2px 0 8px 0 rgba(0, 0, 0, 0.15);
+.top-nav-menu {
+  flex: 1;
+  background: transparent;
+  border-bottom: none;
+  line-height: 64px;
 }
 
-.site-layout {
-  height: 100vh;
+:deep(.ant-menu-dark.ant-menu-horizontal > .ant-menu-item) {
+  padding: 0 20px;
+  margin: 0 4px;
+  border-radius: 8px;
+  top: 0;
+  margin-top: 12px;
+  height: 40px;
+  line-height: 40px;
+  color: rgba(255, 255, 255, 0.65);
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-menu-dark.ant-menu-horizontal > .ant-menu-item:hover) {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.active-menu {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+:deep(.ant-menu-dark.ant-menu-horizontal > .ant-menu-item-selected) {
+  background-color: transparent;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+}
+
+.user-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.user-profile-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.user-avatar {
+  background: #1677ff;
+}
+
+.username {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.dropdown-icon {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dropdown-header {
+  padding: 12px 16px;
+  outline: none;
+}
+
+.dropdown-user {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+}
+
+.dropdown-role {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+}
+
+.logout-item {
+  color: #ff4d4f !important;
+}
+
+.logout-item:hover {
+  background-color: rgba(255, 77, 79, 0.1) !important;
+}
+
+.madf-content {
   display: flex;
   flex-direction: column;
 }
 
-.site-layout-header {
-  background: #141414;
-  padding: 0 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  z-index: 9;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-.user-action {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  transition: background 0.3s;
-  height: 64px;
-}
-
-.user-action:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.username {
-  margin-left: 8px;
-  color: rgba(255, 255, 255, 0.85);
-  font-weight: 500;
-}
-
-.site-layout-content {
-  margin: 0;
-  padding: 0;
+.content-wrapper {
   flex: 1;
-  overflow: auto;
-  background-color: #141414;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+/* Page transition animations */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@media (max-width: 768px) {
+  .header-container {
+    padding: 0 16px;
+  }
+  
+  .logo-text, .username {
+    display: none;
+  }
+  
+  .logo-area {
+    margin-right: 16px;
+  }
+  
+  .content-wrapper {
+    padding: 16px;
+  }
 }
 </style>
