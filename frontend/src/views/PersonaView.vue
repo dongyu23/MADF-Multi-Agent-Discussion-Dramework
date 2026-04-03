@@ -9,8 +9,11 @@
         <a-button @click="handleCreatePresets" :loading="creatingPresets" size="large" class="preset-btn" style="margin-right: 12px;">
           <thunderbolt-outlined /> 一键生成预设库
         </a-button>
-        <a-button type="primary" size="large" @click="showRealGodModal" class="create-btn">
-          <thunderbolt-outlined /> 调用上帝模式
+        <a-button type="primary" size="large" @click="showCreateModal" class="create-btn" style="margin-right: 12px;">
+          <plus-outlined /> 手动创建
+        </a-button>
+        <a-button type="primary" size="large" @click="showRealGodModal" class="create-btn" style="background-color: #722ed1; border-color: #722ed1;">
+          <thunderbolt-outlined /> 上帝模式
         </a-button>
       </div>
     </div>
@@ -24,7 +27,7 @@
         <div class="empty-icon"><team-outlined /></div>
         <h3>无可用智能体</h3>
         <p>您还没有创建任何智能体，请点击右上角按钮新建一个。</p>
-        <a-button type="primary" @click="showRealGodModal">立即创建</a-button>
+        <a-button type="primary" @click="showCreateModal">立即创建</a-button>
       </div>
 
       <div v-else class="persona-grid">
@@ -176,7 +179,7 @@ const resetForm = () => {
   formState.persona_type = ''
 }
 
-const showRealGodModal = () => {
+const showCreateModal = () => {
   resetForm()
   isModalVisible.value = true
 }
