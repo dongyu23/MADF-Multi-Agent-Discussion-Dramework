@@ -4,28 +4,27 @@
     :theme="{ 
       algorithm: theme.darkAlgorithm,
       token: {
-        colorPrimary: '#D4AF37',
-        colorBgBase: '#0B0B0C',
-        colorBgContainer: '#15151A',
-        colorTextBase: '#F2E8CF',
-        fontFamily: '\'Azeret Mono\', monospace',
-        fontFamilyCode: '\'Azeret Mono\', monospace',
-        borderRadius: 2,
-        colorBorder: '#333333',
+        colorPrimary: '#1890ff',
+        colorBgBase: '#0d0d12',
+        colorBgContainer: '#191923',
+        colorTextBase: '#ffffff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, \'Helvetica Neue\', Arial, \'Noto Sans\', sans-serif',
+        borderRadius: 8,
+        colorBorder: 'rgba(255, 255, 255, 0.1)',
       },
       components: {
         Card: {
-          colorBgContainer: 'rgba(21, 21, 26, 0.8)',
-          headerFontSize: 24,
+          colorBgContainer: 'rgba(25, 25, 35, 0.6)',
+          headerFontSize: 16,
         },
         Button: {
-          borderRadius: 0,
-          fontWeight: 600,
+          borderRadius: 8,
+          fontWeight: 500,
         }
       }
     }"
   >
-    <div class="app-container noise-bg">
+    <div class="app-container">
       <router-view />
     </div>
   </a-config-provider>
@@ -40,13 +39,16 @@ const configStore = useConfigStore()
 </script>
 
 <style>
-/* Global reset and aesthetic */
+/* Global reset and refined aesthetic */
 html, body, #app {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #0B0B0C;
-  color: #F2E8CF;
+  background-color: #0d0d12;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .app-container {
@@ -55,31 +57,38 @@ html, body, #app {
   position: relative;
 }
 
-/* Noise overlay for that gritty, archival texture */
-.noise-bg::before {
+/* Subtle background pattern */
+.app-container::before {
   content: "";
   position: fixed;
   top: 0; left: 0; width: 100vw; height: 100vh;
   pointer-events: none;
-  z-index: 9999;
-  opacity: 0.04;
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  z-index: -1;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
-h1, h2, h3, h4, h5, h6, .ant-card-head-title, .ant-typography {
-  font-family: 'Cormorant Garamond', serif !important;
-  letter-spacing: 0.02em;
+/* Smooth transitions for links and buttons */
+a {
+  transition: all 0.3s ease;
 }
 
-.ant-btn {
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family: 'Azeret Mono', monospace;
+/* Elegant scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-/* Subtle glowing line at top of cards to look like a terminal interface */
-.ant-card {
-  border-top: 2px solid #D4AF37 !important;
-  backdrop-filter: blur(10px);
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 </style>

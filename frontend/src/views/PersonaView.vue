@@ -408,16 +408,16 @@ const showRealGodModal = () => {
 }
 
 .title {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 36px;
   font-weight: bold;
-  color: #D4AF37;
+  color: #1890ff;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
 .subtitle {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 14px;
   color: #888;
   margin-top: 4px;
@@ -433,14 +433,14 @@ const showRealGodModal = () => {
 .persona-card {
   background: rgba(15, 15, 20, 0.85);
   border: 1px solid #222;
-  border-top: 2px solid #D4AF37 !important;
-  border-radius: 0;
+  
+  border-radius: 12px;
   transition: all 0.3s;
 }
 
 .persona-card:hover {
-  border-color: #D4AF37;
-  box-shadow: 0 5px 20px rgba(212, 175, 55, 0.15);
+  border-color: #1890ff;
+  box-shadow: 0 5px 20px rgba(24, 144, 255, 0.15);
   transform: translateY(-2px);
 }
 
@@ -453,13 +453,13 @@ const showRealGodModal = () => {
 .persona-avatar {
   background: #111;
   border: 1px solid #D4AF37;
-  color: #D4AF37;
-  font-family: 'Cormorant Garamond', serif;
+  color: #1890ff;
+  font-weight: 600;
   font-weight: bold;
 }
 
 .name {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 20px;
   font-weight: bold;
   color: #F2E8CF;
@@ -467,7 +467,7 @@ const showRealGodModal = () => {
 }
 
 .persona-desc {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 12px;
   color: #888;
   margin-top: 16px;
@@ -488,7 +488,7 @@ const showRealGodModal = () => {
 }
 
 .type-tag {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 10px;
   border: 1px solid #4CAF50;
   color: #4CAF50;
@@ -497,7 +497,7 @@ const showRealGodModal = () => {
 }
 
 .model-tag {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 10px;
   border: 1px solid #1890ff;
   color: #1890ff;
@@ -508,7 +508,7 @@ const showRealGodModal = () => {
 :deep(.ant-modal-content) {
   background: #111 !important;
   border: 1px solid #D4AF37 !important;
-  border-radius: 0 !important;
+  border-radius: 12px !important;
 }
 
 :deep(.ant-modal-header) {
@@ -535,7 +535,7 @@ const showRealGodModal = () => {
 }
 
 .form-item-tip {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 11px;
   color: #666;
   margin-top: 4px;

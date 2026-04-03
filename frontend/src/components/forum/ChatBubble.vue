@@ -111,11 +111,11 @@ const avatarColor = computed(() => {
 }
 
 .system-message {
-  background: rgba(212, 175, 55, 0.05);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  color: #D4AF37;
+  background: rgba(24, 144, 255, 0.05);
+  border: 1px solid rgba(24, 144, 255, 0.2);
+  color: #1890ff;
   padding: 8px 24px;
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 11px;
   letter-spacing: 1px;
   max-width: 80%;
@@ -144,15 +144,15 @@ const avatarColor = computed(() => {
 }
 
 .sender-name {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 18px;
   font-weight: bold;
-  color: #D4AF37;
+  color: #1890ff;
   letter-spacing: 1px;
 }
 
 .sender-role {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 9px;
   padding: 2px 6px;
   border: 1px solid #1890ff;
@@ -162,7 +162,7 @@ const avatarColor = computed(() => {
 }
 
 .message-time {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 10px;
   color: #666;
 }
@@ -173,17 +173,17 @@ const avatarColor = computed(() => {
   border: 1px solid #333;
   padding: 20px 24px;
   color: #F2E8CF;
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 18px;
   line-height: 1.6;
   box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-  border-left: 3px solid #D4AF37;
+  border-left: 3px solid #1890ff;
 }
 
 .is-self .message-body {
-  background: rgba(212, 175, 55, 0.05);
+  background: rgba(24, 144, 255, 0.05);
   border-left: 1px solid #333;
-  border-right: 3px solid #D4AF37;
+  border-right: 3px solid #1890ff;
 }
 
 .thought-process {
@@ -197,13 +197,13 @@ const avatarColor = computed(() => {
   align-items: center;
   gap: 8px;
   color: #888;
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 11px;
   margin-bottom: 8px;
 }
 
 .thought-content {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 12px;
   color: #888;
   line-height: 1.5;
@@ -228,14 +228,14 @@ const avatarColor = computed(() => {
 .markdown-content :deep(pre) {
   background: #050505 !important;
   border: 1px solid #333 !important;
-  border-radius: 0 !important;
+  border-radius: 12px !important;
   font-family: 'Azeret Mono', monospace !important;
   padding: 16px !important;
 }
 
 .markdown-content :deep(code) {
   font-family: 'Azeret Mono', monospace !important;
-  color: #D4AF37;
+  color: #1890ff;
   background: rgba(0,0,0,0.3);
   padding: 2px 4px;
 }

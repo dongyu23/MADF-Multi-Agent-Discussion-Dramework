@@ -1,10 +1,10 @@
 <template>
   <div class="auth-wrapper">
-    <div class="cyber-box">
+    <div class="glass-container">
       <div class="auth-header">
-        <h1 class="auth-title">A R C H I V E</h1>
-        <div class="auth-subtitle">IDENTIFICATION REQUIRED</div>
-        <div class="glow-divider"></div>
+        <h1 class="auth-title">MADF 枢纽</h1>
+        <div class="auth-subtitle">多智能体圆桌讨论系统</div>
+        <div class="accent-line"></div>
       </div>
 
       <a-alert
@@ -13,7 +13,7 @@
         type="error"
         show-icon
         closable
-        class="cyber-alert"
+        class="custom-alert"
         @close="authStore.error = null"
       />
 
@@ -24,28 +24,28 @@
         hide-required-mark
         class="auth-form"
       >
-        <a-form-item name="username" class="cyber-form-item">
+        <a-form-item name="username" class="custom-form-item">
           <a-input
             v-model:value="formState.username"
             size="large"
-            placeholder="[ ENTER_DESIGNATION ]"
-            class="cyber-input"
+            placeholder="请输入用户名"
+            class="custom-input"
           >
             <template #prefix>
-              <span class="prefix-icon">_></span>
+              <user-outlined class="input-icon" />
             </template>
           </a-input>
         </a-form-item>
 
-        <a-form-item name="password" class="cyber-form-item">
+        <a-form-item name="password" class="custom-form-item">
           <a-input-password
             v-model:value="formState.password"
             size="large"
-            placeholder="[ ENTER_CIPHER ]"
-            class="cyber-input"
+            placeholder="请输入密码"
+            class="custom-input"
           >
             <template #prefix>
-              <span class="prefix-icon">***</span>
+              <lock-outlined class="input-icon" />
             </template>
           </a-input-password>
         </a-form-item>
@@ -59,21 +59,20 @@
             :loading="authStore.loading"
             class="submit-btn"
           >
-            <span class="btn-text">AUTHENTICATE</span>
+            登 录
           </a-button>
         </a-form-item>
 
         <div class="auth-footer">
-          <span class="footer-text">UNREGISTERED ENTITY?</span>
-          <router-link to="/auth/register" class="link-btn">[ INITIATE_REGISTRATION ]</router-link>
+          <span class="footer-text">还没有账号？</span>
+          <router-link to="/auth/register" class="link-btn">立即注册</router-link>
         </div>
 
         <div class="disclaimer">
-          <div class="warning-line"></div>
+          <div class="divider-line"></div>
           <p class="warning-text">
-            <warning-outlined style="color: #e63946; margin-right: 8px;" />
-            WARNING: CONSTRUCTED PERSONAS MAY HALLUCINATE OR DEVIATE FROM HISTORICAL ACCURACY. 
-            ENTER AT YOUR OWN EXISTENTIAL RISK.
+            <warning-outlined style="color: rgba(255, 255, 255, 0.45); margin-right: 8px;" />
+            系统生成的 AI 角色发言可能包含虚构内容，不代表真实人物观点。本平台内容仅供研究与演示，请勿作为专业建议。
           </p>
         </div>
       </a-form>
@@ -84,7 +83,7 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { WarningOutlined } from '@ant-design/icons-vue'
+import { UserOutlined, LockOutlined, WarningOutlined } from '@ant-design/icons-vue'
 
 const authStore = useAuthStore()
 const formState = reactive({
@@ -104,46 +103,32 @@ const onFinish = async (values: any) => {
   align-items: center;
   width: 100%;
   min-height: 100vh;
-  background: radial-gradient(circle at center, #1a1a24 0%, #0b0b0c 100%);
+  background: radial-gradient(circle at top right, #1f1f2e 0%, #0d0d12 100%);
   position: relative;
-  z-index: 1;
 }
 
 .auth-wrapper::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(212, 175, 55, 0.03) 2px,
-    rgba(212, 175, 55, 0.03) 4px
-  );
-  z-index: -1;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+  z-index: 0;
 }
 
-.cyber-box {
+.glass-container {
   width: 100%;
-  max-width: 480px;
-  background: rgba(15, 15, 20, 0.85);
-  border: 1px solid #D4AF37;
-  padding: 40px;
+  max-width: 440px;
+  background: rgba(25, 25, 35, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 48px 40px;
   position: relative;
-  box-shadow: 0 0 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(212, 175, 55, 0.05);
-  backdrop-filter: blur(5px);
+  z-index: 1;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
-
-.cyber-box::before, .cyber-box::after {
-  content: '';
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border: 2px solid #D4AF37;
-}
-
-.cyber-box::before { top: -2px; left: -2px; border-right: none; border-bottom: none; }
-.cyber-box::after { bottom: -2px; right: -2px; border-left: none; border-top: none; }
 
 .auth-header {
   text-align: center;
@@ -151,92 +136,87 @@ const onFinish = async (values: any) => {
 }
 
 .auth-title {
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 48px;
-  color: #D4AF37;
-  margin: 0;
-  letter-spacing: 8px;
-  text-shadow: 0 0 15px rgba(212, 175, 55, 0.5);
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+  letter-spacing: 2px;
 }
 
 .auth-subtitle {
-  font-family: 'Azeret Mono', monospace;
-  font-size: 12px;
-  color: #888;
-  letter-spacing: 4px;
-  margin-top: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 1px;
 }
 
-.glow-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
-  margin-top: 20px;
-  opacity: 0.5;
+.accent-line {
+  height: 3px;
+  width: 40px;
+  background: #1890ff;
+  margin: 20px auto 0;
+  border-radius: 2px;
 }
 
-.cyber-form-item {
+.custom-form-item {
   margin-bottom: 24px;
 }
 
 :deep(.ant-input-affix-wrapper) {
-  background: rgba(0,0,0,0.5) !important;
-  border: 1px solid #333 !important;
-  border-radius: 0 !important;
-  padding: 8px 16px !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  padding: 10px 16px !important;
+  transition: all 0.3s ease;
 }
 
-:deep(.ant-input-affix-wrapper-focused) {
-  border-color: #D4AF37 !important;
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2) !important;
+:deep(.ant-input-affix-wrapper-focused),
+:deep(.ant-input-affix-wrapper:hover) {
+  border-color: rgba(24, 144, 255, 0.6) !important;
+  background: rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
 }
 
 :deep(.ant-input) {
   background: transparent !important;
-  color: #F2E8CF !important;
-  font-family: 'Azeret Mono', monospace !important;
-  letter-spacing: 1px;
+  color: #ffffff !important;
+  font-size: 15px !important;
 }
 
 :deep(.ant-input::placeholder) {
-  color: #555 !important;
+  color: rgba(255, 255, 255, 0.3) !important;
 }
 
-.prefix-icon {
-  color: #D4AF37;
-  font-family: 'Azeret Mono', monospace;
-  font-weight: bold;
+.input-icon {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 16px;
   margin-right: 8px;
 }
 
+:deep(.ant-input-affix-wrapper-focused) .input-icon {
+  color: #1890ff;
+}
+
 .submit-btn {
-  height: 50px;
-  background: transparent;
-  border: 1px solid #D4AF37;
-  color: #D4AF37;
-  border-radius: 0;
-  margin-top: 16px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s;
+  height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 8px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  border: none;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  transition: all 0.3s ease;
 }
 
 .submit-btn:hover {
-  background: rgba(212, 175, 55, 0.15);
-  color: #FFF;
-  border-color: #FFF;
-  box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+  background: linear-gradient(135deg, #40a9ff 0%, #1890ff 100%);
 }
 
-.submit-btn::before {
-  content: '';
-  position: absolute;
-  top: 0; left: -100%; width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s;
-}
-
-.submit-btn:hover::before {
-  left: 100%;
+.submit-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
 }
 
 .auth-footer {
@@ -245,60 +225,65 @@ const onFinish = async (values: any) => {
 }
 
 .footer-text {
-  font-family: 'Azeret Mono', monospace;
-  font-size: 11px;
-  color: #666;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .link-btn {
-  color: #D4AF37;
-  font-family: 'Azeret Mono', monospace;
-  font-size: 11px;
+  color: #1890ff;
+  font-size: 14px;
   margin-left: 8px;
   text-decoration: none;
-  transition: color 0.3s, text-shadow 0.3s;
+  transition: color 0.3s;
 }
 
 .link-btn:hover {
-  color: #FFF;
-  text-shadow: 0 0 8px #D4AF37;
+  color: #40a9ff;
 }
 
 .disclaimer {
-  margin-top: 40px;
+  margin-top: 32px;
   text-align: center;
 }
 
-.warning-line {
+.divider-line {
   height: 1px;
-  background: #e63946;
-  opacity: 0.3;
-  margin-bottom: 16px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  margin-bottom: 20px;
 }
 
 .warning-text {
-  font-family: 'Azeret Mono', monospace;
-  font-size: 10px;
-  color: #888;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
   line-height: 1.6;
   margin: 0;
+  text-align: left;
+  padding: 0 12px;
 }
 
-.cyber-alert {
-  background: rgba(230, 57, 70, 0.1);
-  border: 1px solid #e63946;
-  border-radius: 0;
+.custom-alert {
+  background: rgba(255, 77, 79, 0.1);
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  border-radius: 8px;
   margin-bottom: 24px;
 }
 
+:deep(.ant-alert-message) {
+  color: #ff4d4f;
+}
+
+:deep(.ant-alert-icon) {
+  color: #ff4d4f;
+}
+
 @media (max-width: 576px) {
-  .cyber-box {
+  .glass-container {
+    border-radius: 0;
     border: none;
+    background: transparent;
     box-shadow: none;
-    padding: 20px;
-  }
-  .cyber-box::before, .cyber-box::after {
-    display: none;
+    backdrop-filter: none;
+    padding: 32px 24px;
   }
 }
 </style>

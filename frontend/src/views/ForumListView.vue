@@ -267,16 +267,16 @@ const handleDelete = async (id: number) => {
 }
 
 .title {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 36px;
   font-weight: bold;
-  color: #D4AF37;
+  color: #1890ff;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
 .subtitle {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 14px;
   color: #888;
   margin-top: 4px;
@@ -292,15 +292,15 @@ const handleDelete = async (id: number) => {
 .forum-card {
   background: rgba(15, 15, 20, 0.85);
   border: 1px solid #222;
-  border-top: 2px solid #D4AF37 !important;
-  border-radius: 0;
+  
+  border-radius: 12px;
   transition: all 0.3s;
   cursor: pointer;
 }
 
 .forum-card:hover {
-  border-color: #D4AF37;
-  box-shadow: 0 5px 20px rgba(212, 175, 55, 0.15);
+  border-color: #1890ff;
+  box-shadow: 0 5px 20px rgba(24, 144, 255, 0.15);
   transform: translateY(-2px);
 }
 
@@ -311,14 +311,14 @@ const handleDelete = async (id: number) => {
 }
 
 .topic {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 20px;
   font-weight: bold;
   color: #F2E8CF;
 }
 
 .description {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 12px;
   color: #888;
   margin-top: 12px;
@@ -334,7 +334,7 @@ const handleDelete = async (id: number) => {
   justify-content: space-between;
   align-items: center;
   margin-top: 16px;
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 11px;
   color: #666;
 }
@@ -349,7 +349,7 @@ const handleDelete = async (id: number) => {
 :deep(.ant-modal-content) {
   background: #111 !important;
   border: 1px solid #D4AF37 !important;
-  border-radius: 0 !important;
+  border-radius: 12px !important;
 }
 
 :deep(.ant-modal-header) {

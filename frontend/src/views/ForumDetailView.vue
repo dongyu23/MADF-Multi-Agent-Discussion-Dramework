@@ -277,8 +277,8 @@ const handleStop = async () => {
     0deg,
     transparent,
     transparent 2px,
-    rgba(212, 175, 55, 0.02) 2px,
-    rgba(212, 175, 55, 0.02) 4px
+    rgba(24, 144, 255, 0.02) 2px,
+    rgba(24, 144, 255, 0.02) 4px
   );
   z-index: -1;
   pointer-events: none;
@@ -303,26 +303,26 @@ const handleStop = async () => {
 }
 
 .forum-topic {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 24px;
   font-weight: bold;
-  color: #D4AF37;
+  color: #1890ff;
   letter-spacing: 2px;
   text-transform: uppercase;
 }
 
 :deep(.ant-tag) {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 10px;
-  border-radius: 0;
+  border-radius: 8px;
   padding: 2px 8px;
   border: 1px solid;
   letter-spacing: 1px;
 }
 
 .header-right :deep(.ant-btn) {
-  font-family: 'Azeret Mono', monospace;
-  border-radius: 0;
+  font-size: 14px;
+  border-radius: 8px;
   letter-spacing: 1px;
   background: transparent;
   color: #F2E8CF;
@@ -330,15 +330,15 @@ const handleStop = async () => {
 }
 
 .header-right :deep(.ant-btn-primary) {
-  border-color: #D4AF37;
-  color: #D4AF37;
+  border-color: #1890ff;
+  color: #1890ff;
 }
 
 .header-right :deep(.ant-btn-primary:hover) {
-  background: rgba(212, 175, 55, 0.1);
+  background: rgba(24, 144, 255, 0.1);
   color: #FFF;
   border-color: #FFF;
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+  box-shadow: 0 0 10px rgba(24, 144, 255, 0.4);
 }
 
 .header-right :deep(.ant-btn-dangerous) {
@@ -371,28 +371,28 @@ const handleStop = async () => {
   border: 1px solid #333 !important;
   color: #F2E8CF !important;
   font-family: 'Azeret Mono', monospace !important;
-  border-radius: 0 !important;
+  border-radius: 8px !important;
 }
 
 :deep(.ant-input-search .ant-input:focus) {
   border-color: #D4AF37 !important;
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2) !important;
+  box-shadow: 0 0 10px rgba(24, 144, 255, 0.2) !important;
 }
 
 :deep(.ant-input-search-button) {
   background: transparent !important;
   border: 1px solid #D4AF37 !important;
   color: #D4AF37 !important;
-  border-radius: 0 !important;
+  border-radius: 8px !important;
   font-family: 'Azeret Mono', monospace !important;
   transition: all 0.3s;
 }
 
 :deep(.ant-input-search-button:hover) {
-  background: rgba(212, 175, 55, 0.1) !important;
+  background: rgba(24, 144, 255, 0.1) !important;
   color: #FFF !important;
   border-color: #FFF !important;
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.4) !important;
+  box-shadow: 0 0 10px rgba(24, 144, 255, 0.4) !important;
 }
 
 .participant-list {
@@ -411,15 +411,15 @@ const handleStop = async () => {
 }
 
 .p-name {
-  font-family: 'Cormorant Garamond', serif;
+  font-weight: 600;
   font-size: 18px;
   font-weight: bold;
-  color: #D4AF37;
+  color: #1890ff;
   letter-spacing: 1px;
 }
 
 .p-role {
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 10px;
   border: 1px solid #1890ff;
   color: #1890ff;
@@ -430,7 +430,7 @@ const handleStop = async () => {
 .system-log-terminal {
   background-color: #050505;
   color: #4CAF50;
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   padding: 16px;
   height: 400px;
   overflow-y: auto;
@@ -471,7 +471,7 @@ const handleStop = async () => {
 :deep(.ant-modal-content) {
   background: #111 !important;
   border: 1px solid #D4AF37 !important;
-  border-radius: 0 !important;
+  border-radius: 8px !important;
 }
 
 :deep(.ant-modal-header) {

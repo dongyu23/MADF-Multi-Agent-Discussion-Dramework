@@ -74,7 +74,7 @@ defineExpose({ scrollToBottom })
   border-left: 1px solid #222;
 }
 .message-list-container::-webkit-scrollbar-thumb {
-  background: #D4AF37;
+  background: #1890ff;
 }
 
 .messages-wrapper {
@@ -88,8 +88,8 @@ defineExpose({ scrollToBottom })
 .loading-indicator {
   text-align: center;
   padding: 40px;
-  font-family: 'Azeret Mono', monospace;
-  color: #D4AF37;
+  font-size: 14px;
+  color: #1890ff;
   letter-spacing: 2px;
 }
 
@@ -97,16 +97,16 @@ defineExpose({ scrollToBottom })
   text-align: center;
   padding: 60px;
   color: #888;
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   border: 1px dashed #333;
   margin-top: 40px;
 }
 
 .typing-indicator {
   padding: 16px;
-  border-left: 2px solid #D4AF37;
+  border-left: 2px solid #1890ff;
   background: rgba(15, 15, 20, 0.8);
-  font-family: 'Azeret Mono', monospace;
+  font-size: 14px;
   font-size: 12px;
   color: #888;
   margin-top: 16px;
