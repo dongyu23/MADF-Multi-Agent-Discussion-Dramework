@@ -256,17 +256,13 @@ class RealGodAgent:
         future_n = None
         executor = None
         
-        # 1. Start N determination in background if not provided
+        # 1. Determine N synchronously to avoid concurrent API calls (429 errors)
         if n is None:
-             from concurrent.futures import ThreadPoolExecutor
-             executor = ThreadPoolExecutor(max_workers=1)
-             # Submit background task
-             future_n = executor.submit(self._get_persona_count, prompt)
-             
-             # Assume 1 for now to start immediately
-             n = 1 
-             yield {"type": "count", "content": 1}
-        
+             n = self._get_persona_count(prompt)
+             if n > 5: n = 5
+             yield {"type": "count", "content": n}
+             yield {"type": "thought", "content": f"已识别需求，计划生成 {n} 位角色。"}
+
         # 2. Main Loop for each character
         i = 0
         session_context = "无"
@@ -277,21 +273,8 @@ class RealGodAgent:
         while i < n:
             current_index = i + 1
             
-            # Check if N has been updated from background task
-            if future_n and future_n.done():
-                 try:
-                     real_n = future_n.result()
-                     if real_n > n:
-                         n = real_n
-                         # Limit N to prevent abuse
-                         if n > 5: n = 5
-                         yield {"type": "count", "content": n}
-                         yield {"type": "thought", "content": f"已识别需求，更新计划生成 {n} 位角色。"}
-                     future_n = None # Handled
-                 except Exception as e:
-                     yield {"type": "error", "content": f"获取数量失败: {e}"}
-                     future_n = None
-
+            # (future_n removed)
+            
             # Dynamic message that reflects current N
             progress_msg = f"=== 开始生成第 {current_index} 位角色 (共 {n} 位) ==="
             yield {"type": "thought_start", "content": progress_msg}
@@ -324,19 +307,8 @@ class RealGodAgent:
             while step < self.max_steps and not finished:
                 step += 1
                 
-                # Periodically check for N update inside the loop too
-                if future_n and future_n.done():
-                     try:
-                         real_n = future_n.result()
-                         if real_n > n:
-                             n = real_n
-                             if n > 5: n = 5
-                             yield {"type": "count", "content": n}
-                             yield {"type": "thought", "content": f"已识别需求，更新计划生成 {n} 位角色。"}
-                         future_n = None
-                     except Exception:
-                         future_n = None
-
+                # (future_n removed from inner loop)
+                
                 # Call LLM
                 full_resp = yield from self._call_llm(character_history)
                 character_history.append({"role": "assistant", "content": full_resp})
@@ -357,63 +329,60 @@ class RealGodAgent:
                     continue
                     
                 # Execute Action
-                if action.startswith("Search") or "Search[" in action:
-                    tool_name, query = self._parse_action(action)
-                    if not query:
-                        # Parsing failed or empty
-                        obs = "系统提示：无法解析搜索关键词。请使用格式：Action: Search[关键词]"
-                        yield {"type": "error", "content": obs}
-                        character_history.append({"role": "user", "content": f"Observation: {obs}"})
-                        continue
-
-                        
-                    self.searched_queries.add(query)
-                    search_count += 1
-                    
-                    yield {"type": "action", "content": f"搜索: {query}"}
-                    obs = self.search(query)
-                    yield {"type": "observation", "content": obs}
-                    
-                    # Prepare Next Prompt
-                    next_user_msg = f"Observation: {obs}"
-                    
-                    # **Logic Injection**: Force Finish after 2nd search
-                    if search_count >= 2:
-                        next_user_msg += "\n\n[系统提示]: 这是你的最后一次搜索。请根据现有信息，立即使用 Action: Finish[...] 生成角色 JSON。"
-                    
-                    character_history.append({"role": "user", "content": next_user_msg})
-
-                elif action.startswith("Finish") or "Finish[" in action:
+                if "Finish[" in action or action.startswith("Finish") or "{" in action and "}" in action and not action.startswith("Search"):
                     json_str = self._parse_action_input(action)
-                    
+                    if not json_str and "{" in action:
+                        # try extracting raw JSON
+                        match = re.search(r"(\{.*?\})", action, re.DOTALL)
+                        if match: json_str = match.group(1)
+
                     # Try to parse JSON
                     persona = parse_json_from_response(json_str)
-                    
+
                     if persona:
                         if isinstance(persona, dict):
                             persona = [persona]
-                        
+
                         # Add to generated names context
                         for p in persona:
                             if isinstance(p, dict) and "name" in p:
                                 name = p["name"]
                                 generated_names.append(name)
-                                
+
                                 # Update session context for next character
                                 bio_snippet = p.get("bio", "")[:100] + "..."
                                 if session_context == "无":
                                     session_context = ""
                                 session_context += f"\n- 已生成角色: {name} ({p.get('title', '未知')})\n  简介: {bio_snippet}\n"
                             else:
-                                # Handle case where p is not a dict or missing name
                                 logger.warning(f"Skipping invalid persona entry: {p}")
-                                
+
                         yield {"type": "result", "content": persona}
                         finished = True
                     else:
                         obs = "系统提示：JSON 解析失败，请检查格式（确保包含 name, bio, theories 等字段）并重试。"
                         yield {"type": "error", "content": obs}
                         character_history.append({"role": "user", "content": f"Observation: {obs}"})
+
+                elif action.startswith("Search") or "Search[" in action:
+                    tool_name, query = self._parse_action(action)
+                    if not query:
+                        obs = "系统提示：无法解析搜索关键词。请使用格式：Action: Search[关键词]"
+                        yield {"type": "error", "content": obs}
+                        character_history.append({"role": "user", "content": f"Observation: {obs}"})
+                        continue
+
+                    self.searched_queries.add(query)
+                    search_count += 1
+
+                    yield {"type": "action", "content": f"搜索: {query}"}
+                    obs = self.search(query)
+                    yield {"type": "observation", "content": obs}
+
+                    next_user_msg = f"Observation: {obs}"
+                    if search_count >= 2:
+                        next_user_msg += "\n\n[系统提示]: 这是你的最后一次搜索。请根据现有信息，立即使用 Action: Finish[...] 生成角色 JSON。"
+                    character_history.append({"role": "user", "content": next_user_msg})
                 
                 else:
                     obs = "系统提示：未知指令。请严格使用 Action: Search[...] 或 Action: Finish[...]"
