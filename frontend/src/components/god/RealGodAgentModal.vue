@@ -265,7 +265,9 @@ const handleSend = async () => {
             const event = JSON.parse(jsonStr)
             const items = assistantMsg.value.items || []
             
-            if (event.type === 'count') {
+            if (event.type === 'ping') {
+              continue
+            } else if (event.type === 'count') {
                 totalToGenerate.value = event.content
                 
             } else if (event.type === 'thought_start') {

@@ -35,9 +35,7 @@ REACT_SYS_PROMPT = """
 
 【严禁重复 (Anti-Duplication)】
 - **绝对禁止**再次生成已生成的角色（{generated_names}）。
-- **绝对禁止**生成数据库中已存在的角色（{db_existing_names}）。
-- **绝对禁止**对已生成的角色进行“补充”、“深化”或“更详细版本”的生成。
-- 你必须生成一个**全新的**、与上述角色**不同的**人物。
+- 如果用户指定了具体人物，必须严格生成该人物。
 - 如果用户需求比较模糊（如“生成两个物理学家”），请确保每位角色都是独立的个体。
 
 【思维与行动准则 (ReAct)】
@@ -163,63 +161,64 @@ class RealGodAgent:
         """Helper to call LLM and yield events."""
         full_text = ""
         
-        try:
-            # Increase timeout to 60s for better stability
-            # Enable raise_error to catch specific exceptions
-            response_stream = get_chat_completion(messages, stream=True, timeout=60, raise_error=True)
-            
-            if not response_stream:
-                yield {"type": "error", "content": "LLM未响应 (返回为空)"}
-                return ""
-
-            for chunk in response_stream:
-                if not chunk.choices: continue
-                delta = chunk.choices[0].delta.content or ""
-                if not delta: continue
-                
-                full_text += delta
-                # Stream raw delta as thought_chunk
-                yield {"type": "thought_chunk", "content": delta}
-
-        except Exception as e:
-            error_msg = str(e)
-            
-            # 尝试获取当前的 API Key 以便调试 (仅在安全环境中)
+        import queue
+        import threading
+        
+        q = queue.Queue()
+        
+        def worker():
             try:
-                current_key = settings.final_api_key
-                # Mask key for partial safety: first 5 and last 5 chars
-                if len(current_key) > 10:
-                    masked_key = f"{current_key}...{current_key[-5:]}"
-                else:
-                    masked_key = current_key
-            except:
-                masked_key = "Unknown/Not Set"
+                # Increase timeout to 60s for better stability
+                # Enable raise_error to catch specific exceptions
+                response_stream = get_chat_completion(messages, stream=True, timeout=60, raise_error=True)
                 
-            logger.error(f"LLM Call Error in RealGodAgent: {error_msg}")
-            
-            # Use stdout for critical errors to ensure they appear in Docker logs
-            import sys
-            print(f"[CRITICAL] LLM Call Error: {error_msg}", file=sys.stderr)
-            print(f"[CRITICAL] Debug Info - API Key: {masked_key}, Model: {settings.final_model_name}, Base URL: {settings.final_base_url}", file=sys.stderr)
-            
-            # Provide more user-friendly error messages for common issues
-            if "401" in error_msg:
-                user_msg = f"鉴权失败 (401): API Key 无效或过期。当前使用 Key: {masked_key}"
-            elif "404" in error_msg:
-                user_msg = f"资源未找到 (404): 模型 '{settings.final_model_name}' 不存在或 API 路径错误。URL: {settings.final_base_url}"
-            elif "429" in error_msg:
-                user_msg = "请求过于频繁 (429): 达到 API 速率限制，请稍后重试。"
-            elif "timeout" in error_msg.lower():
-                user_msg = "请求超时: LLM 响应时间过长 (Timeout)"
-            elif "connection" in error_msg.lower():
-                user_msg = f"网络错误: 无法连接到 LLM 服务 ({settings.final_base_url})"
-            else:
-                user_msg = f"LLM 错误: {error_msg}"
+                if not response_stream:
+                    q.put({"type": "error", "content": "LLM未响应 (返回为空)"})
+                    q.put(None)
+                    return
                 
-            yield {"type": "error", "content": user_msg}
-            # Important: Log the error to frontend via 'error' type
-            # And return empty string to stop this turn
-            return ""
+                for chunk in response_stream:
+                    if not chunk.choices: continue
+                    delta = chunk.choices[0].delta.content or ""
+                    if not delta: continue
+                    q.put({"type": "thought_chunk", "content": delta})
+                    
+                q.put(None) # EOF
+            except Exception as e:
+                error_msg = str(e)
+                import logging
+                logging.getLogger("app.agent.real_god").error(f"LLM Call Error in RealGodAgent: {error_msg}")
+                
+                user_msg = "生成过程中发生错误"
+                if "timeout" in error_msg.lower():
+                    user_msg = "请求大模型超时"
+                elif "connection" in error_msg.lower():
+                    user_msg = "网络错误: 无法连接到 LLM 服务"
+                elif "429" in error_msg:
+                    user_msg = "请求过于频繁，请稍后再试"
+                
+                q.put({"type": "error", "content": user_msg})
+                q.put(None)
+                
+        t = threading.Thread(target=worker)
+        t.start()
+        
+        full_text = ""
+        while True:
+            try:
+                # Block for 1 second to wait for chunk
+                item = q.get(timeout=1.0)
+                if item is None:
+                    break
+                if item["type"] == "thought_chunk":
+                    full_text += item["content"]
+                elif item["type"] == "error":
+                    yield item
+                    return ""
+                yield item
+            except queue.Empty:
+                # Heartbeat to keep connection alive
+                yield {"type": "ping", "content": ""}
 
         return full_text
 
