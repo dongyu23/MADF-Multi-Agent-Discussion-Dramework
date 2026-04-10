@@ -121,7 +121,7 @@ class RealGodAgent:
                 search_query=query,
                 count=5, 
                 search_recency_filter="noLimit",
-                content_size="high"
+                content_size="medium"
             )
             
             
@@ -165,22 +165,19 @@ class RealGodAgent:
         full_text = ""
         
         try:
-            # Increase timeout to 120s for better stability
-            # Enable raise_error to catch specific exceptions
-            response_stream = get_chat_completion(messages, stream=True, timeout=120, raise_error=True)
-            
-            if not response_stream:
+            response = get_chat_completion(messages, stream=False, timeout=120, raise_error=True)
+            if not response or not getattr(response, "choices", None):
                 yield {"type": "error", "content": "LLM未响应 (返回为空)"}
                 return ""
 
-            for chunk in response_stream:
-                if not chunk.choices: continue
-                delta = chunk.choices[0].delta.content or ""
-                if not delta: continue
-                
-                full_text += delta
-                # Stream raw delta as thought_chunk
-                yield {"type": "thought_chunk", "content": delta}
+            full_text = (response.choices[0].message.content or "").strip()
+            if not full_text:
+                yield {"type": "error", "content": "LLM未响应 (内容为空)"}
+                return ""
+
+            chunk_size = 80
+            for i in range(0, len(full_text), chunk_size):
+                yield {"type": "thought_chunk", "content": full_text[i:i + chunk_size]}
 
         except Exception as e:
             error_msg = str(e)
@@ -198,7 +195,6 @@ class RealGodAgent:
                 
             logger.error(f"LLM Call Error in RealGodAgent: {error_msg}")
             
-            # Use stdout for critical errors to ensure they appear in Docker logs
             import sys
             print(f"[CRITICAL] LLM Call Error: {error_msg}", file=sys.stderr)
             print(f"[CRITICAL] Debug Info - API Key: {masked_key}, Model: {settings.final_model_name}, Base URL: {settings.final_base_url}", file=sys.stderr)

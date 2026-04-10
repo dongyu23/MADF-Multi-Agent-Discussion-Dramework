@@ -15,12 +15,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ZhipuAI client with timeout configuration
-client = ZhipuAI(
-    api_key=settings.final_api_key,
-    base_url=settings.BASE_URL
-)
-
 def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, timeout=30, callback=None, raise_error=False):
     """
     Wrapper for ZhipuAI chat completion with retry logic and timeout.
@@ -34,9 +28,14 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
     
     while attempt < max_retries:
         try:
+            client = ZhipuAI(
+                api_key=settings.final_api_key,
+                base_url=settings.final_base_url
+            )
+
             if stream:
                 return client.chat.completions.create(
-                    model=settings.MODEL_NAME,
+                    model=settings.final_model_name,
                     messages=messages,
                     stream=True,
                     temperature=0.8,
@@ -46,7 +45,7 @@ def get_chat_completion(messages, stream=False, json_mode=False, max_retries=3, 
                 )
             
             response = client.chat.completions.create(
-                model=settings.MODEL_NAME,
+                model=settings.final_model_name,
                 messages=messages,
                 stream=False,
                 temperature=0.8,

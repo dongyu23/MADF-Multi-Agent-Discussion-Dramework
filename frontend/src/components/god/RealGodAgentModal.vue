@@ -201,14 +201,11 @@ watch(() => messages.value.length, scrollToBottom)
 // Deep watch for items updates
 watch(() => messages.value[messages.value.length - 1]?.items, scrollToBottom, { deep: true })
 
-// 合并后的键盘事件处理器，消除 onKeydown Prop Array 警告
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Enter') {
     if (e.shiftKey) {
-      // 允许 Shift+Enter 正常换行，不阻止默认行为
       return
     }
-    // 仅按 Enter 或 Ctrl+Enter 时阻止默认换行并发送
     e.preventDefault()
     handleSend()
   }
