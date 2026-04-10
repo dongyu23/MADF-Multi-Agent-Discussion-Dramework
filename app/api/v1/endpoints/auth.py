@@ -29,7 +29,9 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
         
     try:
         user = get_user_by_username(db, form_data.username)
-        if not user or not Hasher.verify_password(form_data.password, user.password_hash):
+        
+        password_hash = getattr(user, "password_hash", None)
+        if not user or not password_hash or not Hasher.verify_password(form_data.password, password_hash):
             logger.warning(f"Failed login attempt for user: {form_data.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -47,8 +49,10 @@ def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depen
         raise
     except Exception as e:
         logger.error(f"Error during login for user {form_data.username}: {str(e)}", exc_info=True)
-        # Re-raise to be caught by global exception handler, but we've logged it
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during login"
+        )
 
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Any = Depends(get_db)):

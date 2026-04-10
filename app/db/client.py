@@ -114,7 +114,8 @@ class RetryingLibsqlClient:
             yield RetryingTransaction(tx)
         
     def close(self):
-        return self._client.close()
+        # We now use a shared singleton client, so we don't close it per request
+        pass
         
     def __getattr__(self, name):
         return getattr(self._client, name)
@@ -125,11 +126,19 @@ class Database:
         self.auth_token = settings.TURSO_AUTH_TOKEN
         self.is_postgres = self.url.startswith("postgresql://") or self.url.startswith("postgres://")
         self.is_remote = self.url.startswith("libsql://") or self.url.startswith("https://")
+        self._shared_client = None
         
     def get_connection(self):
+        # We handle PostgreSQL connections differently, assuming psycopg2 is used per request for now
+        # To scale Postgres, a connection pool like asyncpg or psycopg pool should be used.
         if self.is_postgres:
             return PostgresClient(self.url)
             
+        # For LibSQL/SQLite, use a shared singleton client to avoid "database is locked" errors
+        # and prevent recreating HTTP connections or re-opening local DB files constantly.
+        if self._shared_client is not None:
+            return self._shared_client
+
         token = self.auth_token if self.is_remote else None
         
         # Ensure directory exists for local file
@@ -173,9 +182,11 @@ class Database:
 
         # Wrap with retry logic
         if not self.is_remote and not self.is_postgres:
-            return RetryingLibsqlClient(client)
+            self._shared_client = RetryingLibsqlClient(client)
+        else:
+            self._shared_client = client
             
-        return client
+        return self._shared_client
 
     def init_db(self, schema_path="app/db/schema.sql"):
         """初始化数据库结构"""
