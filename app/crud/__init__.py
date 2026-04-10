@@ -324,6 +324,25 @@ def update_forum_participant(db, forum_id: int, persona_id: int, thoughts_histor
         logger.error(f"Error updating participant: {e}")
         raise
 
+def update_message_ooc(db, message_id: int):
+    try:
+        rs = db_execute_commit(
+            db,
+            """
+            UPDATE messages 
+            SET content = '[OOC发言已降权] ' || content 
+            WHERE id = ?
+            RETURNING *
+            """,
+            [message_id]
+        )
+        if rs:
+            return rs[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error updating message OOC: {e}")
+        return None
+
 def create_message(db, message: MessageCreate):
     try:
         timestamp = datetime.now()

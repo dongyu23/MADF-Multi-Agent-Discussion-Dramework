@@ -36,7 +36,7 @@ class TestRobustnessTimeout(unittest.IsolatedAsyncioTestCase):
             # It's easier to mock to_thread to return agent.speak()
             
             with patch('asyncio.to_thread', side_effect=lambda func, *args: func(*args)):
-                await scheduler._agent_speak(mock_db, forum_id, agent, {}, "context")
+                await scheduler._agent_speak(forum_id, agent, {}, "context")
             
             # Verify:
             # It should handle None generator by logging warning and setting content to "(沉默)"
@@ -109,7 +109,7 @@ class TestRobustnessTimeout(unittest.IsolatedAsyncioTestCase):
              patch('app.services.forum_scheduler.update_forum_participant'), \
              patch('asyncio.to_thread', side_effect=lambda func, *args: func(*args)):
              
-            await scheduler._agent_speak(mock_db, forum_id, agent, {}, "context")
+            await scheduler._agent_speak(forum_id, agent, {}, "context")
             
             # It should catch the exception inside the loop and proceed with partial content
             mock_create_msg.assert_called_once()

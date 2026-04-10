@@ -71,7 +71,7 @@ class TestStreamRobustness(unittest.IsolatedAsyncioTestCase):
             
             # Run _moderator_speak
             # We assume asyncio.to_thread executes the function immediately for this test
-            await scheduler._moderator_speak(mock_db, 1, mock_moderator, "opening", guests=[])
+            await scheduler._moderator_speak(1, mock_moderator, "opening", guests=[])
             
             # Verify broadcasts
             # Expected: 2 chunks + 1 final message + 1 system log (speech)

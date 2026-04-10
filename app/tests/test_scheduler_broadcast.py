@@ -44,7 +44,7 @@ class TestForumScheduler(unittest.TestCase):
 
             # Run
             import asyncio
-            asyncio.run(self.scheduler._agent_speak(mock_db, forum_id, agent, thought, context))
+            asyncio.run(self.scheduler._agent_speak(forum_id, agent, thought, context))
             
             # Verify broadcasts
             # We expect len("Hello World") calls to broadcast_chunk

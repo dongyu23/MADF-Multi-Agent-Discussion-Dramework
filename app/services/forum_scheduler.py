@@ -750,7 +750,59 @@ class ForumScheduler:
                     
                     thought = thoughts_map.get(speaker) or {}
                     
-                    await self._agent_speak(forum_id, speaker, thought, context_str, ablation_flags=ablation_flags)
+                    final_content, msg_id = await self._agent_speak(forum_id, speaker, thought, context_str, ablation_flags=ablation_flags)
+                    
+                    # SubTask 4 & 5: State Update and OOC Detection in Background
+                    async def update_states_bg(parts, t_map, spk, content, m_id, f_id):
+                        interaction = f"[{spk.name}] 发言: {content}" if spk else "本轮无人发言。"
+                        
+                        # SubTask 5: OOC Detection for the speaker
+                        is_ooc = False
+                        if spk and content and not ablation_flags.get("no_ooc_detect"):
+                            try:
+                                from app.agent.ooc_detector import OOCDetector
+                                # We need the speaker's current states
+                                spk_states = spk._retrieve_states(context_str)
+                                is_ooc, ooc_reason = await asyncio.to_thread(
+                                    OOCDetector.detect_ooc, 
+                                    spk.name, 
+                                    spk.system_prompt, 
+                                    spk_states, 
+                                    content
+                                )
+                                if is_ooc:
+                                    logger.warning(f"OOC Detected for {spk.name}: {ooc_reason}")
+                                    await self._broadcast_system_log(
+                                        f_id, 
+                                        f"[OOC拦截] 嘉宾 [{spk.name}] 发言异常 ({ooc_reason})，已隔离其状态更新。", 
+                                        "warning"
+                                    )
+                                    # Mark message in DB
+                                    if m_id:
+                                        from app.crud import update_message_ooc
+                                        with self._get_db() as db:
+                                            update_message_ooc(db, m_id)
+                            except Exception as e:
+                                logger.error(f"OOC detection failed for {spk.name}: {e}")
+
+                        for p in parts:
+                            try:
+                                th = t_map.get(p, {})
+                                sp_content = content if p == spk else "（选择了倾听）"
+                                
+                                # SubTask 5.2: Skip state update if the speaker is OOC
+                                # to prevent polluting long-term memory (beliefs, relations, etc.)
+                                if is_ooc:
+                                    continue
+                                    
+                                await asyncio.to_thread(p.update_states_after_turn, interaction, th, sp_content)
+                                # Log state update completion for debug
+                                # await self._broadcast_system_log(f_id, f"嘉宾 [{p.name}] 内部状态已更新", "info")
+                            except Exception as e:
+                                logger.error(f"State update failed for {p.name}: {e}")
+                                
+                    if not ablation_flags.get("no_state_update"):
+                        asyncio.create_task(update_states_bg(participants, thoughts_map, speaker, final_content, msg_id, forum_id))
                 
                 turn_count += 1
                 
@@ -950,6 +1002,10 @@ class ForumScheduler:
             
             await self._broadcast_message(forum_id, agent.name, content, persona_id, None, stream_id, msg.id, thought=thought_content)
             await self._broadcast_system_log(forum_id, content, "speech", agent.name)
+            
+            return content, msg.id
+            
+        return "", None
 
     async def _broadcast_chunk(self, forum_id: int, speaker: str, chunk: str, persona_id: int = None, moderator_id: int = None, stream_id: str = None, thought: str = None):
         if not chunk:

@@ -93,6 +93,13 @@ class ModeratorResponse(ModeratorBase):
     model_config = ConfigDict(from_attributes=True)
 
 from .system_log import SystemLogCreate, SystemLogResponse
+from .roleplay import (
+    CharacterProfileBase, CharacterProfileCreate, CharacterProfileResponse,
+    RelationStateBase, RelationStateCreate, RelationStateResponse,
+    TemporalPersonaBase, TemporalPersonaCreate, TemporalPersonaResponse,
+    SemanticStateBase, SemanticStateCreate, SemanticStateResponse,
+    EpisodicMemoryBase, EpisodicMemoryCreate, EpisodicMemoryResponse
+)
 
 # --- Forum Schemas ---
 class ForumBase(BaseModel):
