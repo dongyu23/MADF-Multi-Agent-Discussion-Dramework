@@ -36,8 +36,8 @@ async def async_generator_wrapper(gen):
                 break
             if isinstance(chunk, Exception):
                 logger.error(f"Error in generator: {chunk}")
-                break
-                
+                raise chunk
+
             yield chunk
             
         except Exception as e:

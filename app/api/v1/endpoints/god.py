@@ -88,8 +88,8 @@ async def generate_real_personas(
                         next_task = asyncio.create_task(anext(iterator))
                     except StopAsyncIteration:
                         break
-                    except Exception as e:
-                        raise e
+                    except Exception:
+                        raise
                         
                     # If result, save to DB
                     if event["type"] == "result":
@@ -159,8 +159,11 @@ async def generate_real_personas(
                     
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 else:
-                    # 触发超时但生成任务仍在进行，发送心跳包防止断连
-                    yield ": keep-alive\n\n"
+                    # 触发超时但生成任务仍在进行，发送带有占位符的真实状态包防止网关缓冲和断连
+                    # 某些严格的反向代理需要至少4KB才会 flush
+                    padding = " " * 4096
+                    alive_msg = {"type": "status", "content": f"正在进行深度思考与整理中，请稍候...{padding}"}
+                    yield f"data: {json.dumps(alive_msg, ensure_ascii=False)}\n\n"
             
             # Final message after all generations are done
             final_msg = f"✅ 所有智能体角色已生成并保存完毕。已停止生成。"
@@ -171,4 +174,9 @@ async def generate_real_personas(
             err_msg = f"生成流异常: {str(e)}"
             yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+    }
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
