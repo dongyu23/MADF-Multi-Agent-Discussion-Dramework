@@ -59,4 +59,20 @@ def register(user: UserCreate, db: Any = Depends(get_db)):
     db_user = get_user_by_username(db, user.username)
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
-    return create_user(db=db, user=user)
+    
+    try:
+        return create_user(db=db, user=user)
+    except Exception as e:
+        logger.error(f"Error during registration for user {user.username}: {str(e)}", exc_info=True)
+        
+        error_msg = str(e).lower()
+        if "unique" in error_msg or "constraint" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Username already registered"
+            )
+            
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during registration"
+        )
