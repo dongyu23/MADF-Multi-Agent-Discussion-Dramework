@@ -115,14 +115,13 @@
 
       <div class="input-area">
         <a-textarea
-          v-model:value="input"
-          placeholder="描述您想要创建的真实人物... (Enter 发送, Shift+Enter 换行)"
-          :auto-size="{ minRows: 2, maxRows: 4 }"
-          @keydown.enter.exact.prevent="handleSend"
-          @keydown.ctrl.enter.prevent="handleSend"
-          :disabled="loading"
-          class="custom-textarea"
-        />
+            v-model:value="input"
+            placeholder="描述您想要创建的真实人物... (Enter 发送, Shift+Enter 换行)"
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            @keydown="handleKeydown"
+            :disabled="loading"
+            class="custom-textarea"
+          />
         <a-button type="primary" class="send-btn" @click="handleSend" :loading="loading">
           <template #icon><send-outlined /></template>
           发送
@@ -201,6 +200,19 @@ watch(() => props.open, (val) => {
 watch(() => messages.value.length, scrollToBottom)
 // Deep watch for items updates
 watch(() => messages.value[messages.value.length - 1]?.items, scrollToBottom, { deep: true })
+
+// 合并后的键盘事件处理器，消除 onKeydown Prop Array 警告
+const handleKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter') {
+    if (e.shiftKey) {
+      // 允许 Shift+Enter 正常换行，不阻止默认行为
+      return
+    }
+    // 仅按 Enter 或 Ctrl+Enter 时阻止默认换行并发送
+    e.preventDefault()
+    handleSend()
+  }
+}
 
 const handleSend = async () => {
   if (!input.value.trim() || loading.value) return

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from typing import List, Annotated, Any
 import json
+import asyncio
 import logging
 
 from app.db.session import get_db
@@ -64,74 +65,101 @@ async def generate_real_personas(
             # Use n=None to allow the agent to auto-detect count from prompt
             target_n = request.n if request.n > 1 else None
             
-            async for event in async_generator_wrapper(agent.run(request.prompt, n=target_n, generated_names=generated_names_in_session, db_existing_names=db_existing_names)):
+            # 使用 async generator 包装器将同步生成器转为异步
+            agen = async_generator_wrapper(
+                agent.run(
+                    request.prompt, 
+                    n=target_n, 
+                    generated_names=generated_names_in_session, 
+                    db_existing_names=db_existing_names
+                )
+            )
+            
+            iterator = agen.__aiter__()
+            next_task = asyncio.create_task(anext(iterator))
+            
+            while True:
+                # 设定 15 秒超时等待，避免代理断开
+                done, pending = await asyncio.wait([next_task], timeout=15.0)
                 
-                # If result, save to DB
-                if event["type"] == "result":
-                    personas_data = event["content"]
-                    saved_personas_dicts = []
-                    
-                    # Ensure it's a list
-                    if isinstance(personas_data, dict):
-                        personas_data = [personas_data]
+                if next_task in done:
+                    try:
+                        event = next_task.result()
+                        next_task = asyncio.create_task(anext(iterator))
+                    except StopAsyncIteration:
+                        break
+                    except Exception as e:
+                        raise e
                         
-                    for p_data in personas_data:
-                        # Add name to session list
-                        # Safe check for name
-                        if isinstance(p_data, dict) and p_data.get('name'):
-                            generated_names_in_session.append(p_data['name'])
+                    # If result, save to DB
+                    if event["type"] == "result":
+                        personas_data = event["content"]
+                        saved_personas_dicts = []
                         
-                        # Use unified service
-                        try:
-                            if not isinstance(p_data, dict):
-                                logger.error(f"Invalid persona data format: {p_data}")
-                                continue
-                                
-                            # Log debug info
-                            msg_content = f"正在保存角色: {p_data.get('name', 'Unknown')}..."
-                            yield f"data: {json.dumps({'type': 'status', 'content': msg_content}, ensure_ascii=False)}\n\n"
+                        # Ensure it's a list
+                        if isinstance(personas_data, dict):
+                            personas_data = [personas_data]
                             
-                            saved_p = persona_service.save_generated_persona(user_id, p_data, db=db)
+                        for p_data in personas_data:
+                            # Add name to session list
+                            # Safe check for name
+                            if isinstance(p_data, dict) and p_data.get('name'):
+                                generated_names_in_session.append(p_data['name'])
                             
-                            if saved_p:
-                                # Parse theories from JSON string to List if needed
-                                theories_val = saved_p.theories
-                                if isinstance(theories_val, str):
-                                    try:
-                                        theories_val = json.loads(theories_val)
-                                    except:
-                                        theories_val = []
-
-                                # Convert to dict for JSON serialization
-                                saved_dict = {
-                                    "id": saved_p.id,
-                                    "name": saved_p.name,
-                                    "title": saved_p.title,
-                                    "bio": saved_p.bio,
-                                    "theories": theories_val,
-                                    "stance": saved_p.stance,
-                                    "system_prompt": saved_p.system_prompt,
-                                    "is_public": saved_p.is_public
-                                }
-                                saved_personas_dicts.append(saved_dict)
-                                success_msg = f"✅ 角色 {saved_p.name} 保存成功 (ID: {saved_p.id})"
-                                yield f"data: {json.dumps({'type': 'status', 'content': success_msg}, ensure_ascii=False)}\n\n"
+                            # Use unified service
+                            try:
+                                if not isinstance(p_data, dict):
+                                    logger.error(f"Invalid persona data format: {p_data}")
+                                    continue
+                                    
+                                # Log debug info
+                                msg_content = f"正在保存角色: {p_data.get('name', 'Unknown')}..."
+                                yield f"data: {json.dumps({'type': 'status', 'content': msg_content}, ensure_ascii=False)}\n\n"
                                 
-                                # CRITICAL: Ensure cache is invalidated for the list view
-                                cache_service.delete_keys_pattern(f"personas:list:{user_id}:*")
-                            else:
-                                fail_msg = f"角色 {p_data.get('name')} 保存失败，请查看后台日志"
-                                yield f"data: {json.dumps({'type': 'error', 'content': fail_msg}, ensure_ascii=False)}\n\n"
+                                saved_p = persona_service.save_generated_persona(user_id, p_data, db=db)
                                 
-                        except Exception as e:
-                            logger.error(f"Error saving real persona: {e}")
-                            err_msg = f"保存异常: {str(e)}"
-                            yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
+                                if saved_p:
+                                    # Parse theories from JSON string to List if needed
+                                    theories_val = saved_p.theories
+                                    if isinstance(theories_val, str):
+                                        try:
+                                            theories_val = json.loads(theories_val)
+                                        except:
+                                            theories_val = []
+    
+                                    # Convert to dict for JSON serialization
+                                    saved_dict = {
+                                        "id": saved_p.id,
+                                        "name": saved_p.name,
+                                        "title": saved_p.title,
+                                        "bio": saved_p.bio,
+                                        "theories": theories_val,
+                                        "stance": saved_p.stance,
+                                        "system_prompt": saved_p.system_prompt,
+                                        "is_public": saved_p.is_public
+                                    }
+                                    saved_personas_dicts.append(saved_dict)
+                                    success_msg = f"✅ 角色 {saved_p.name} 保存成功 (ID: {saved_p.id})"
+                                    yield f"data: {json.dumps({'type': 'status', 'content': success_msg}, ensure_ascii=False)}\n\n"
+                                    
+                                    # CRITICAL: Ensure cache is invalidated for the list view
+                                    cache_service.delete_keys_pattern(f"personas:list:{user_id}:*")
+                                else:
+                                    fail_msg = f"角色 {p_data.get('name')} 保存失败，请查看后台日志"
+                                    yield f"data: {json.dumps({'type': 'error', 'content': fail_msg}, ensure_ascii=False)}\n\n"
+                                    
+                            except Exception as e:
+                                logger.error(f"Error saving real persona: {e}")
+                                err_msg = f"保存异常: {str(e)}"
+                                yield f"data: {json.dumps({'type': 'error', 'content': err_msg}, ensure_ascii=False)}\n\n"
+                        
+                        # Update content with saved personas (including IDs)
+                        event["content"] = saved_personas_dicts
                     
-                    # Update content with saved personas (including IDs)
-                    event["content"] = saved_personas_dicts
-                
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                else:
+                    # 触发超时但生成任务仍在进行，发送心跳包防止断连
+                    yield ": keep-alive\n\n"
             
             # Final message after all generations are done
             final_msg = f"✅ 所有智能体角色已生成并保存完毕。已停止生成。"
