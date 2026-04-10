@@ -79,8 +79,8 @@ async def generate_real_personas(
             next_task = asyncio.create_task(anext(iterator))
             
             while True:
-                # 设定 15 秒超时等待，避免代理断开
-                done, pending = await asyncio.wait([next_task], timeout=15.0)
+                # 设定 5 秒超时等待，避免代理断开（15秒可能对于某些网关太长了）
+                done, pending = await asyncio.wait([next_task], timeout=5.0)
                 
                 if next_task in done:
                     try:
@@ -130,6 +130,7 @@ async def generate_real_personas(
                                     # Convert to dict for JSON serialization
                                     saved_dict = {
                                         "id": saved_p.id,
+                                        "owner_id": user_id,
                                         "name": saved_p.name,
                                         "title": saved_p.title,
                                         "bio": saved_p.bio,
