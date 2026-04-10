@@ -798,6 +798,16 @@ class ForumScheduler:
                                 await asyncio.to_thread(p.update_states_after_turn, interaction, th, sp_content)
                                 # Log state update completion for debug
                                 # await self._broadcast_system_log(f_id, f"嘉宾 [{p.name}] 内部状态已更新", "info")
+                                
+                                # 广播更新后的状态给前端
+                                if getattr(p, 'current_states', None):
+                                    state_data = {
+                                        "relations": [r.model_dump() for r in p.current_states.relations] if p.current_states.relations else [],
+                                        "beliefs": [b.model_dump() for b in p.current_states.beliefs] if p.current_states.beliefs else [],
+                                        "temporal": p.current_states.temporal.model_dump() if p.current_states.temporal else None,
+                                        "behavior_patterns": [bp.model_dump() for bp in p.current_states.behavior_patterns] if p.current_states.behavior_patterns else []
+                                    }
+                                    await self._broadcast_agent_state(f_id, getattr(p, 'id', 0), p.name, state_data)
                             except Exception as e:
                                 logger.error(f"State update failed for {p.name}: {e}")
                                 
@@ -1056,5 +1066,14 @@ class ForumScheduler:
             "type": "system",
             "content": content
         })
+
+    async def _broadcast_agent_state(self, forum_id: int, agent_id: int, agent_name: str, state_data: dict):
+        msg = {
+            "type": "agent_state_update",
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "state": state_data
+        }
+        await manager.broadcast(forum_id, msg)
 
 scheduler = ForumScheduler()

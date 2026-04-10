@@ -63,7 +63,8 @@ export const useForumStore = defineStore('forum', {
     heartbeatInterval: null as any,
     reconnectTimeout: null as any,
     reconnectAttempts: 0,
-    isManuallyClosed: false
+    isManuallyClosed: false,
+    agentStates: {} as Record<string, any>
   }),
   actions: {
     // --- Persistence ---
@@ -197,7 +198,11 @@ export const useForumStore = defineStore('forum', {
                     
                     const data = JSON.parse(event.data)
                     
-                    if (data.type === 'new_message' && data.data) {
+                    if (data.type === 'agent_state_update') {
+                        if (data.agent_name && data.state) {
+                            this.agentStates[data.agent_name] = data.state
+                        }
+                    } else if (data.type === 'new_message' && data.data) {
                         this.addMessage(data.data)
                     } else if (data.type === 'message_chunk' && data.data) {
                         this.updateStreamingMessage(data.data)

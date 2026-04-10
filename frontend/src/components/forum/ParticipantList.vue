@@ -11,6 +11,14 @@
             <a-tooltip v-if="item.persona.title" :title="item.persona.title">
                 <a-tag color="blue" size="small" class="title-tag">{{ item.persona.title }}</a-tag>
             </a-tooltip>
+            <a-tag 
+              v-if="store.agentStates?.[item.persona.name]?.temporal?.current_emotion" 
+              color="orange" 
+              size="small"
+              class="title-tag"
+            >
+              {{ store.agentStates[item.persona.name].temporal.current_emotion }}
+            </a-tag>
           </div>
           <a-tooltip v-if="item.persona.stance" :title="item.persona.stance">
             <a-tag :color="getStanceColor(item.persona.stance)" size="small" class="stance-tag">
@@ -21,6 +29,43 @@
       </div>
       <div class="card-body">
         <p class="bio-text">{{ item.persona.bio || '暂无简介' }}</p>
+        
+        <!-- 新增：内部状态探针 -->
+        <div v-if="store.agentStates?.[item.persona.name]" style="margin-top: 12px;">
+          <a-popover title="Agent 内部状态 (Internal States)" trigger="hover" placement="right">
+            <template #content>
+              <div style="max-width: 300px; font-size: 12px;">
+                <div v-if="store.agentStates[item.persona.name].beliefs?.length" style="margin-bottom: 8px;">
+                  <strong>核心信念:</strong>
+                  <ul style="padding-left: 16px; margin: 4px 0 0 0;">
+                    <li v-for="(belief, idx) in store.agentStates[item.persona.name].beliefs" :key="idx" style="margin-bottom: 4px;">
+                      {{ belief.statement }} (置信度: {{ belief.confidence }})
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="store.agentStates[item.persona.name].relations?.length" style="margin-bottom: 8px;">
+                  <strong>人际认知:</strong>
+                  <ul style="padding-left: 16px; margin: 4px 0 0 0;">
+                    <li v-for="(rel, idx) in store.agentStates[item.persona.name].relations" :key="idx" style="margin-bottom: 4px;">
+                      对 {{ rel.target_name }} : {{ rel.attitude }} (信任: {{ rel.trust }}, 敌意: {{ rel.hostility }})
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="store.agentStates[item.persona.name].behavior_patterns?.length">
+                  <strong>行为模式:</strong>
+                  <ul style="padding-left: 16px; margin: 4px 0 0 0;">
+                    <li v-for="(bp, idx) in store.agentStates[item.persona.name].behavior_patterns" :key="idx" style="margin-bottom: 4px;">
+                      {{ bp.pattern }} (置信度: {{ bp.confidence }})
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </template>
+            <a-button size="small" type="dashed" block>
+              <ReadOutlined /> 窥探内心
+            </a-button>
+          </a-popover>
+        </div>
       </div>
     </div>
   </div>
@@ -28,6 +73,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ReadOutlined } from '@ant-design/icons-vue'
 import { useForumStore } from '@/stores/forum'
 
 const store = useForumStore()
