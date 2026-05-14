@@ -1,0 +1,65 @@
+MIT License
+
+Copyright (c) 2026 JinZihan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## 关于本项目
+
+本项目（女娲 Agent）基于 [nuwa-skill](https://github.com/alchaincyf/nuwa-skill) 进行了重大改进和定制化开发。
+
+### 核心修改和创新
+
+1. **重构验证阶段**
+   - 原版：需要用户手动确认每个验证步骤的输入输出
+   - 本版：全自动化验证流程，无需用户干预
+
+2. **增强约束力**
+   - 加强了 Skill 生成的规范性和一致性
+   - 优化了心智模型提取的准确度
+
+3. **专业化子智能体架构**
+   - 原版：动态生成子智能体
+   - 本版：预定义 12 个专业子智能体，分工明确
+     - 6 个调研 Agent（Phase 1）
+     - 1 个综合 Agent（Phase 2）
+     - 3 个验证 Agent（Phase 4）
+     - 2 个优化 Agent（Phase 5）
+
+4. **多轮对话支持**
+   - 集成 LangGraph checkpointer
+   - 支持持续交互和上下文记忆
+
+5. **轻量级独立部署**
+   - 纯命令行实现
+   - 无需 Claude Code 或其他 IDE 集成
+   - 基于 DeepAgents 框架重构
+
+### 原始项目
+
+`nuwa-agent-skill/nuwa-skill/` 目录包含原始 nuwa-skill 的内容，遵循其原始 MIT License（见该目录下的 LICENSE 文件）。
+
+原作者：Huashu (花叔)
+原项目：https://github.com/alchaincyf/nuwa-skill
+
+### 致谢
+
+感谢 Huashu (花叔) 创建了 nuwa-skill，为本项目提供了灵感和基础。

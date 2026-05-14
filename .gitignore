@@ -1,0 +1,64 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+*.so
+
+# ── Node / Frontend ──
+frontend/node_modules/
+frontend/dist/
+*.log
+npm-debug.log*
+
+# ── Runtime data ──
+skills/
+pg_data/
+logs/
+
+# ── Secrets ──
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── Testing ──
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+coverage/
+htmlcov/
+.tox/
+.nox/
+playwright-report/
+test-results/
+
+# ── Docker ──
+docker-compose.override.yml
+
+# ── OS ──
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Misc ──
+*.tmp
+*.temp
+*.bak
+*.orig
