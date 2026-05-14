@@ -14,11 +14,12 @@ export function NewDiscussion() {
   const [duration, setDuration] = useState(120);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const { data: agents = [] } = useQuery({
+  const { data: allChars = [] } = useQuery({
     queryKey: ["characters"],
-    queryFn: () => getMyCharacters().then(d => (d.items || []).filter((c: any) => c.status === "ready")),
+    queryFn: () => getMyCharacters().then(d => d.items || []),
     staleTime: 30_000,
   });
+  const agents = allChars.filter((c: any) => c.status === "ready");
 
   const createMutation = useMutation({
     mutationFn: () => createDiscussion(topic.trim(), selectedIds, duration),

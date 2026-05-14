@@ -153,7 +153,29 @@ async def run_skill_generation(
         spawned: set[str] = set()
         completed: set[str] = set()
         seen_nodes: set[str] = set()
+        synced_files: set[str] = set()  # track files already synced to final dir
         tool_seq = 0
+
+        # Helper: sync new files from work dir → final dir, push file_created events
+        def _sync_new_files() -> None:
+            dest_dir = SKILLS_ROOT / owner_id / skill_name
+            generated_src = work_root / "skill-distill" / skill_name
+            if not generated_src.exists():
+                return
+            for p in sorted(generated_src.rglob("*")):
+                if not p.is_file():
+                    continue
+                rel = str(p.relative_to(generated_src))
+                if rel in synced_files:
+                    continue
+                synced_files.add(rel)
+                dest = dest_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(p), str(dest))
+                progress.push("file", f"文件产出：{rel}", {
+                    "path": rel,
+                    "size": p.stat().st_size,
+                })
 
         async for event in agent.astream(
             {"messages": [{"role": "user", "content": prompt}]},
@@ -222,27 +244,16 @@ async def run_skill_generation(
                                 "preview": _truncate(content, 300),
                             })
 
+            # 同步新文件到最终目录 + 推送 file_created 事件
+            _sync_new_files()
+
             # 进度汇总
             if len(spawned) == 0 and len(seen_nodes) >= 2:
                 progress.push("main",
                     "主智能体正在分析任务并制定子智能体调度策略…")
 
-        # ── 复制生成结果 ──
-        progress.push("main", "阶段收尾：复制生成的 Skill 文件到最终目录…")
-
-        dest_dir = SKILLS_ROOT / owner_id / skill_name
-        generated_src = work_root / "skill-distill" / skill_name
-
-        if generated_src.exists():
-            for item in generated_src.iterdir():
-                dest = dest_dir / item.name
-                if item.is_dir():
-                    if dest.exists():
-                        shutil.rmtree(str(dest))
-                    shutil.copytree(str(item), str(dest))
-                else:
-                    shutil.copy2(str(item), str(dest))
-
+        # ── 最终同步所有剩余文件 ──
+        _sync_new_files()
         shutil.rmtree(str(work_root), ignore_errors=True)
 
         file_count = 0

@@ -112,6 +112,12 @@ class DiscussionRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def soft_delete(self, discussion_id: uuid.UUID) -> None:
+        disc = await self.find_by_id(discussion_id)
+        if disc:
+            disc.deleted_at = datetime.now(timezone.utc)
+            await self.session.commit()
+
     async def get_agents(self, discussion_id: uuid.UUID) -> list[DiscussionAgent]:
         stmt = select(DiscussionAgent).where(
             DiscussionAgent.deleted_at.is_(None),

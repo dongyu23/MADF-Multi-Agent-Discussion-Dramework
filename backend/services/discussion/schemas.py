@@ -7,6 +7,11 @@ class DiscussionCreateRequest(BaseModel):
     duration: int = Field(ge=60, le=3600, default=600)  # seconds, default 10 min
 
 
+class AgentInfo(BaseModel):
+    skill_id: str
+    name: str
+
+
 class DiscussionResponse(BaseModel):
     id: str
     owner_id: str
@@ -17,6 +22,7 @@ class DiscussionResponse(BaseModel):
     ended_at: str | None = None
     created_at: str
     updated_at: str
+    agents: list[AgentInfo] = []
 
 
 class DiscussionMessageResponse(BaseModel):

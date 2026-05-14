@@ -62,3 +62,13 @@ async def intervene(
 ) -> Result[None]:
     await svc.intervene(discussion_id, user_id, req.content)
     return Result.ok(None)
+
+
+@router.delete("/{discussion_id}")
+async def delete_discussion(
+    discussion_id: str,
+    user_id: str = Depends(require_user),
+    svc: DiscussionService = Depends(get_discussion_service),
+) -> Result[None]:
+    await svc.delete_discussion(discussion_id, user_id)
+    return Result.ok(None)

@@ -53,6 +53,10 @@ class SkillFileManager:
         def _list() -> list[str]:
             files: list[str] = []
             for root, _dirs, filenames in os.walk(skill_dir):
+                # Exclude internal work directories
+                rel_root = os.path.relpath(root, skill_dir)
+                if rel_root.startswith(".gen_work") or "/.gen_work" in rel_root:
+                    continue
                 for f in filenames:
                     abs_path = os.path.join(root, f)
                     rel = os.path.relpath(abs_path, skill_dir)

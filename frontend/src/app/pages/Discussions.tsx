@@ -1,15 +1,33 @@
 import { Link } from "react-router";
-import { Plus, Users, Play, Clock } from "lucide-react";
+import { Plus, Users, Play, Clock, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
-import { useQuery } from "@tanstack/react-query";
-import { getDiscussions } from "../api/discussions";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getDiscussions, deleteDiscussion } from "../api/discussions";
+import { toast } from "sonner";
 
 export function Discussions() {
+  const queryClient = useQueryClient();
   const { data: discussions = [], isLoading } = useQuery({
     queryKey: ["discussions"],
     queryFn: () => getDiscussions().then(d => d.items || []),
     staleTime: 10_000,
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteDiscussion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["discussions"] });
+      toast.success("讨论已删除");
+    },
+    onError: (err: any) => toast.error(err.response?.data?.message || "删除失败"),
+  });
+
+  const handleDelete = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("确定要删除这场讨论吗？")) return;
+    deleteMutation.mutate(id);
+  };
 
   const statusLabel = (s: string) => {
     const map: Record<string, string> = { running: "进行中", completed: "已完成", starting: "启动中", error: "错误" };
@@ -66,6 +84,13 @@ export function Discussions() {
                   {disc.status === "running" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
                   {statusLabel(disc.status)}
                 </span>
+                <button
+                  onClick={(e) => handleDelete(e, disc.id)}
+                  className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                  title="删除讨论"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
               <h3 className="font-bold text-lg text-slate-900 mb-4 line-clamp-2">{disc.topic}</h3>
               <div className="space-y-2 mb-6">

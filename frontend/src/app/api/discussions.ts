@@ -29,6 +29,11 @@ export async function intervene(id: string, content: string) {
   return res.data.data;
 }
 
+export async function deleteDiscussion(id: string) {
+  const res = await client.delete(`/discussions/${id}`);
+  return res.data.data;
+}
+
 export function buildStreamUrl(id: string, after?: string) {
   let url = `/api/v1/discussions/${id}/stream`;
   if (after) url += `?after=${encodeURIComponent(after)}`;

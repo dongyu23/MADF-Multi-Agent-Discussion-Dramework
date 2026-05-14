@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { Users, MessageSquare, Play, Sparkles, Activity } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
-import { getMyCharacters } from "../api/characters";
+import { getMyCharacters, getGallery } from "../api/characters";
 import { getDiscussions } from "../api/discussions";
 
 export function Home() {
@@ -16,6 +16,11 @@ export function Home() {
     queryFn: () => getDiscussions(1, 5),
     staleTime: 10_000,
   });
+  const { data: galleryItems = [] } = useQuery({
+    queryKey: ["gallery", "count"],
+    queryFn: () => getGallery(undefined, undefined, 50).then(d => d.items || []),
+    staleTime: 60_000,
+  });
 
   const charsTotal = charsData?.total || 0;
   const discsItems = discsData?.items || [];
@@ -25,7 +30,7 @@ export function Home() {
     { label: "我的角色", value: charsTotal, icon: <Users size={20} className="text-indigo-500" /> },
     { label: "讨论总数", value: discsData?.total || 0, icon: <MessageSquare size={20} className="text-blue-500" /> },
     { label: "运行中", value: runningCount, icon: <Activity size={20} className="text-emerald-500" /> },
-    { label: "画廊技能", value: "-", icon: <Sparkles size={20} className="text-purple-500" /> },
+    { label: "画廊技能", value: galleryItems.length, icon: <Sparkles size={20} className="text-purple-500" /> },
   ];
 
   const statusLabel = (s: string) => {

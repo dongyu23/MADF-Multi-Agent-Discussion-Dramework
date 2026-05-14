@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Users, Send, User, Mic, Brain } from "lucide-react";
+import { ArrowLeft, Users, Send, User, Mic, Brain, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDiscussion, getMessages, buildStreamUrl, intervene } from "../api/discussions";
@@ -33,16 +33,47 @@ export function DiscussionRoom() {
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [speaking, setSpeaking] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
   const currentSpeakRef = useRef<{ agent: string; text: string }>({ agent: "", text: "" });
+  const hostStreamRef = useRef<{ text: string; id: number }>({ text: "", id: 0 });
 
   const { data: discussion } = useQuery({
     queryKey: ["discussion", id],
     queryFn: () => getDiscussion(id!),
     enabled: !!id,
     staleTime: 5_000,
+    refetchInterval: 3000,
   });
+
+  // Countdown timer for running discussions
+  useEffect(() => {
+    if (!discussion || discussion.status !== "running" || !discussion.started_at) {
+      setCountdown("");
+      return;
+    }
+    const start = new Date(discussion.started_at).getTime();
+    const duration = (discussion.duration || 0) * 1000;
+    const end = start + duration;
+
+    const tick = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, end - now);
+      const s = Math.ceil(remaining / 1000);
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      setCountdown(`${m}:${String(sec).padStart(2, "0")}`);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [discussion?.status, discussion?.started_at, discussion?.duration]);
+
+  const formatTime = (iso: string | null | undefined) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  };
 
   // Load historical messages (only for completed discussions)
   useEffect(() => {
@@ -61,9 +92,51 @@ export function DiscussionRoom() {
 
     es.addEventListener("heartbeat", () => setConnected(true));
 
+    es.addEventListener("catchup_msg", (e) => {
+      const d = JSON.parse(e.data);
+      const isHost = d.message_type === "host_intro" || d.message_type === "host_summary";
+      const isUser = d.message_type === "user_intervene";
+      const msgType = isUser ? "user" : isHost ? "host" : "agent";
+      const mode = d.message_type === "agent_think" ? "thought" : "spoken";
+      setMessages((prev) => [...prev, {
+        id: Date.now() + Math.random(),
+        type: msgType as "agent" | "host" | "user",
+        mode: mode as "thought" | "spoken",
+        text: d.content,
+        agent: d.agent_name || "系统",
+        confidence: d.confidence,
+      }]);
+    });
+
+    es.addEventListener("host_intro_start", () => {
+      const newId = Date.now();
+      hostStreamRef.current = { text: "", id: newId };
+      setMessages((prev) => [...prev, { id: newId, type: "host", text: "", agent: "主持人" }]);
+    });
+
+    es.addEventListener("host_intro_chunk", (e) => {
+      const d = JSON.parse(e.data);
+      hostStreamRef.current.text += d.content || "";
+      const hid = hostStreamRef.current.id;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "host" && last.id === hid) {
+          return [...prev.slice(0, -1), { ...last, text: hostStreamRef.current.text }];
+        }
+        return [...prev, { id: hid, type: "host", text: hostStreamRef.current.text, agent: "主持人" }];
+      });
+    });
+
     es.addEventListener("host_intro", (e) => {
       const d = JSON.parse(e.data);
-      setMessages((prev) => [...prev, { id: Date.now(), type: "host", text: d.content, agent: "主持人" }]);
+      const hid = hostStreamRef.current.id;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "host" && last.id === hid) {
+          return [...prev.slice(0, -1), { ...last, text: d.content }];
+        }
+        return [...prev, { id: Date.now(), type: "host", text: d.content, agent: "主持人" }];
+      });
     });
 
     es.addEventListener("agent_think", (e) => {
@@ -90,9 +163,35 @@ export function DiscussionRoom() {
     });
 
     es.addEventListener("agent_speak_end", () => { setSpeaking(null); currentSpeakRef.current = { agent: "", text: "" }; });
+    es.addEventListener("host_summary_start", () => {
+      const newId = Date.now();
+      hostStreamRef.current = { text: "", id: newId };
+      setMessages((prev) => [...prev, { id: newId, type: "host", text: "", agent: "主持人总结" }]);
+    });
+
+    es.addEventListener("host_summary_chunk", (e) => {
+      const d = JSON.parse(e.data);
+      hostStreamRef.current.text += d.content || "";
+      const hid = hostStreamRef.current.id;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "host" && last.id === hid) {
+          return [...prev.slice(0, -1), { ...last, text: hostStreamRef.current.text }];
+        }
+        return [...prev, { id: hid, type: "host", text: hostStreamRef.current.text, agent: "主持人总结" }];
+      });
+    });
+
     es.addEventListener("host_summary", (e) => {
       const d = JSON.parse(e.data);
-      setMessages((prev) => [...prev, { id: Date.now(), type: "host", text: d.content, agent: "主持人总结" }]);
+      const hid = hostStreamRef.current.id;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "host" && last.id === hid) {
+          return [...prev.slice(0, -1), { ...last, text: d.content }];
+        }
+        return [...prev, { id: Date.now(), type: "host", text: d.content, agent: "主持人总结" }];
+      });
     });
     es.addEventListener("discussion_end", () => {
       setConnected(false);
@@ -101,7 +200,8 @@ export function DiscussionRoom() {
     });
     es.addEventListener("user_intervened", (e) => {
       const d = JSON.parse(e.data);
-      setMessages((prev) => [...prev, { id: Date.now(), type: "user", text: d.content, agent: d.username || "用户" }]);
+      const agentName = d.username || d.user_id?.slice(0, 8) || "用户";
+      setMessages((prev) => [...prev, { id: Date.now(), type: "user", text: d.content, agent: agentName }]);
     });
     es.onerror = () => setConnected(false);
 
@@ -125,20 +225,36 @@ export function DiscussionRoom() {
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
-      <div className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 flex-shrink-0 shadow-sm z-10">
+      {/* Header */}
+      <div className="border-b border-slate-200 bg-white flex-shrink-0 shadow-sm z-10 px-6 py-3">
         <div className="flex items-center gap-4">
-          <Link to="/discussions" className="text-slate-400 hover:text-slate-900 transition-colors"><ArrowLeft size={20} /></Link>
-          <div>
-            <h1 className="font-bold text-slate-900 text-lg">{discussion?.topic || "加载中..."}</h1>
-            <div className="flex items-center gap-3 text-xs font-medium text-slate-500">
+          <Link to="/discussions" className="text-slate-400 hover:text-slate-900 transition-colors shrink-0"><ArrowLeft size={20} /></Link>
+          <div className="flex-1 min-w-0">
+            <h1 className="font-bold text-slate-900 text-lg truncate">{discussion?.topic || "加载中..."}</h1>
+            <div className="flex items-center gap-3 text-xs font-medium text-slate-500 mt-0.5 flex-wrap">
               <span className="flex items-center gap-1">
                 <span className={`w-2 h-2 rounded-full ${discussion?.status === "running" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
                 {discussion?.status === "running" ? "进行中" : discussion?.status === "completed" ? "已结束" : discussion?.status || "-"}
               </span>
               <span>•</span>
               <span className="flex items-center gap-1"><Users size={12} /> {discussion?.agents?.length || 0} 个智能体</span>
+              <span>•</span>
+              <span className="flex items-center gap-1"><Clock size={12} /> {formatTime(discussion?.started_at)} — {discussion?.ended_at ? formatTime(discussion?.ended_at) : "至今"}</span>
+              {discussion?.status === "running" && countdown && (
+                <><span>•</span><span className="text-amber-600 font-mono font-medium">⏳ {countdown}</span></>
+              )}
               {connected && (<><span>•</span><span className="text-emerald-600">实时连接中</span></>)}
             </div>
+            {discussion?.agents && discussion.agents.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {discussion.agents.map((a: any) => (
+                  <span key={a.skill_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-medium">
+                    <span className="w-3.5 h-3.5 rounded-full bg-indigo-200 text-indigo-600 flex items-center justify-center text-[8px] font-bold">{a.name.charAt(0)}</span>
+                    {a.name.length > 18 ? a.name.slice(0, 16) + "…" : a.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -148,18 +264,35 @@ export function DiscussionRoom() {
           {messages.length === 0 && (
             <div className="text-center py-16 text-slate-400"><p className="text-lg mb-2">等待讨论开始...</p>{discussion?.status === "completed" && <p>讨论已结束</p>}</div>
           )}
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {messages.map((msg, index) => {
               const prevMsg = index > 0 ? messages[index - 1] : null;
               const isTransition = prevMsg && prevMsg.agent === msg.agent && prevMsg.mode === "thought" && msg.mode === "spoken";
+              const delay = Math.min(index * 0.03, 0.3); // stagger up to 300ms
               return (
-                <React.Fragment key={msg.id}>
+                <Fragment key={msg.id}>
                   {isTransition && (
-                    <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex justify-center my-4">
-                      <span className="text-xs font-medium text-slate-400 bg-slate-100 px-4 py-1.5 rounded-full flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse" />{msg.agent} 即将进行发言</span>
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8, y: -8 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 24, delay }}
+                      className="flex justify-center my-3"
+                    >
+                      <span className="text-xs font-medium text-slate-400 bg-slate-100 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-slate-200/50">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        {msg.agent} 即将发言
+                      </span>
                     </motion.div>
                   )}
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${msg.type === "user" ? "flex-row-reverse" : ""}`}>
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                    transition={{ type: "spring", stiffness: 260, damping: 26, delay }}
+                    className={`flex gap-4 ${msg.type === "user" ? "flex-row-reverse" : ""}`}
+                  >
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm shadow-sm ${msg.type === "host" ? "bg-amber-100 text-amber-700" : msg.type === "user" ? "bg-indigo-600 text-white" : "bg-slate-800 text-white"}`}>
                       {msg.type === "host" ? <Mic size={18} /> : msg.type === "user" ? <User size={18} /> : msg.agent.charAt(0)}
                     </div>
@@ -172,12 +305,18 @@ export function DiscussionRoom() {
                       <div className={`p-4 shadow-sm text-[15px] leading-relaxed ${msg.type === "user" ? "bg-indigo-600 text-white rounded-2xl rounded-tr-none" : msg.type === "host" ? "bg-amber-50 text-amber-900 border border-amber-200/50 rounded-2xl rounded-tl-none" : msg.mode === "thought" ? "bg-slate-50 text-slate-500 border-2 border-dashed border-slate-200 rounded-3xl italic" : "bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-tl-none"}`}>{msg.text}</div>
                     </div>
                   </motion.div>
-                </React.Fragment>
+                </Fragment>
               );
             })}
           </AnimatePresence>
           {speaking && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-4">
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.12 } }}
+              transition={{ type: "spring", stiffness: 280, damping: 24 }}
+              className="flex gap-4"
+            >
               <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center flex-shrink-0 font-bold text-sm shadow-sm">{speaking.charAt(0)}</div>
               <div className="max-w-[80%] items-start flex flex-col">
                 <div className="flex items-center gap-2 mb-1 px-1">

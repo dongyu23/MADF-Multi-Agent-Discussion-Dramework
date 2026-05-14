@@ -58,7 +58,13 @@ class DiscussionService:
             if not skill or skill.status != "ready":
                 raise BusinessException(ErrorCode.SKILL_NOT_FOUND,
                                         f"Skill {sid} not found or not ready")
+            if str(skill.owner_id) != owner_id:
+                raise BusinessException(ErrorCode.FORBIDDEN,
+                                        f"Skill '{skill.name}' does not belong to you")
             skill_dir = SKILLS_ROOT / str(skill.owner_id) / skill.name
+            if not (skill_dir / "SKILL.md").exists():
+                raise BusinessException(ErrorCode.SKILL_NOT_FOUND,
+                                        f"SKILL.md missing for skill '{skill.name}'")
             skill_paths[skill.name] = str(skill_dir.resolve())
 
         # Create discussion
@@ -85,63 +91,105 @@ class DiscussionService:
         _active_orchestrators[str(disc.id)] = orchestrator
         asyncio.create_task(self._run_orchestrator(disc.id, orchestrator))
 
-        return DiscussionService._to_response(disc)
+        agents = await self._get_agent_names(disc.id)
+        return DiscussionService._to_response(disc, agents)
 
     async def _run_orchestrator(self, disc_id: uuid.UUID, orch: Orchestrator) -> None:
+        """Background task: runs orchestrator with its own independent DB session."""
         try:
             results = await orch.run()
-            # Agent speak messages already written by _make_event_handler in real-time.
-            # Write agent_think decisions to discussion_messages for replay/analysis.
-            for msg in orch.messages:
-                if msg.get("decision_data"):
-                    for d in msg["decision_data"]:
-                        await self.repo.add_message(
-                            discussion_id=disc_id, round_number=msg["round"],
-                            agent_id=None, agent_name=d.agent_name,
-                            message_type="agent_think", content=d.raw_output,
-                            confidence=d.confidence,
-                        )
-            await self.repo.end_discussion(disc_id)
+            # Persist complete messages (agent_think + agent_speak were written by event handler)
+            await self._finalize_discussion(disc_id)
             logger.info("Discussion %s completed: %d rounds", disc_id, len(results))
         except Exception as e:
             logger.exception("Discussion %s failed", disc_id)
-            await self.repo.set_error(disc_id)
-            # P1: Audit orchestrator crash
-            audit = AuditRepository(self.repo.session)
+            await self._fail_discussion(disc_id, str(e))
+
+    async def _finalize_discussion(self, disc_id: uuid.UUID) -> None:
+        from backend.deps import async_session_factory
+        async with async_session_factory() as bg_session:
+            repo = DiscussionRepository(bg_session)
+            await repo.end_discussion(disc_id)
+
+    async def _fail_discussion(self, disc_id: uuid.UUID, error: str) -> None:
+        from backend.deps import async_session_factory
+        async with async_session_factory() as bg_session:
+            repo = DiscussionRepository(bg_session)
+            await repo.set_error(disc_id)
+            audit = AuditRepository(bg_session)
             await audit.record(disc_id, self._owner_id, "discussion.error", {
-                "error": str(e)[:500],
+                "error": error[:500],
             })
 
     def _make_event_handler(self, disc_id: uuid.UUID):
-        """Create async callback: orchestrator events → Redis + PG messages + Audit."""
+        """Create async callback: orchestrator events → Redis + PG messages."""
         channel = f"discussion:{disc_id}:events"
+        owner_id = self._owner_id
 
         async def handler(event_type: str, data: dict) -> None:
-            # 1. Push to Redis for SSE streaming
+            # 1. Push to Redis for SSE streaming (always)
             r = await _get_redis()
             payload = json.dumps({"event": event_type, "data": data}, ensure_ascii=False)
             await r.publish(channel, payload)
 
-            # 2. Persist agent_speak messages to PG
-            if event_type == "agent_speak_chunk":
-                await self.repo.add_message(
-                    discussion_id=disc_id,
-                    round_number=data.get("round", 0),
-                    agent_id=None,
-                    agent_name=data.get("agent_name", ""),
-                    message_type="agent_speak",
-                    content=data.get("content", ""),
-                )
+            # 2. Persist to PG with independent background session
+            from backend.deps import async_session_factory  # noqa: PLC0415
+            async with async_session_factory() as bg_session:
+                repo = DiscussionRepository(bg_session)
 
-            # 3. Write audit event (with user_id when available)
-            from backend.services.audit.service import AuditService  # noqa: PLC0415
-            audit_svc = AuditService(self.repo.session)
-            await audit_svc.record(
-                event_type=event_type,
-                payload=data,
-                discussion_id=disc_id,
-                user_id=self._owner_id,
-            )
+                if event_type == "agent_speak_end":
+                    await repo.add_message(
+                        discussion_id=disc_id,
+                        round_number=data.get("round", 0),
+                        agent_id=None,
+                        agent_name=data.get("agent_name", ""),
+                        message_type="agent_speak",
+                        content=data.get("content", ""),
+                    )
+
+                elif event_type == "agent_think":
+                    await repo.add_message(
+                        discussion_id=disc_id,
+                        round_number=data.get("round", 0),
+                        agent_id=None,
+                        agent_name=data.get("agent_name", ""),
+                        message_type="agent_think",
+                        content=data.get("reasoning", ""),
+                        confidence=data.get("confidence"),
+                    )
+
+                elif event_type == "host_intro":
+                    await repo.add_message(
+                        discussion_id=disc_id, round_number=0,
+                        agent_id=None, agent_name="主持人",
+                        message_type="host_intro",
+                        content=data.get("content", ""),
+                    )
+
+                elif event_type == "host_summary":
+                    await repo.add_message(
+                        discussion_id=disc_id,
+                        round_number=data.get("total_rounds", 0),
+                        agent_id=None, agent_name="主持人总结",
+                        message_type="host_summary",
+                        content=data.get("content", ""),
+                    )
+
+                elif event_type == "user_intervened":
+                    await repo.add_message(
+                        discussion_id=disc_id,
+                        round_number=0, agent_id=None,
+                        agent_name=data.get("username", data.get("user_id", "用户")),
+                        message_type="user_intervene",
+                        content=data.get("content", ""),
+                    )
+
+                # 3. Business audit for significant events
+                if event_type in ("discussion_end", "discussion_error", "agent_speak_end"):
+                    audit = AuditRepository(bg_session)
+                    await audit.record(disc_id, owner_id, event_type, {
+                        k: v for k, v in data.items() if k != "content"
+                    })
 
         return handler
 
@@ -149,14 +197,47 @@ class DiscussionService:
         d = await self.repo.find_by_id(uuid.UUID(disc_id))
         if not d:
             raise BusinessException(ErrorCode.DISCUSSION_NOT_FOUND)
-        return DiscussionService._to_response(d)
+        agents = await self._get_agent_names(d.id)
+        return DiscussionService._to_response(d, agents)
 
     async def list_discussions(
         self, owner_id: str, page: int, page_size: int
     ) -> tuple[list[DiscussionResponse], int, bool]:
         discs, total = await self.repo.list_by_owner(uuid.UUID(owner_id), page, page_size)
-        items = [DiscussionService._to_response(d) for d in discs]
+        items = []
+        for d in discs:
+            agents = await self._get_agent_names(d.id)
+            items.append(DiscussionService._to_response(d, agents))
         return items, total, (page * page_size) < total
+
+    async def _get_agent_names(self, disc_id: uuid.UUID) -> list[dict]:
+        agents = await self.repo.get_agents(disc_id)
+        result = []
+        for a in agents:
+            skill = await self.char_repo.find_by_id(a.skill_id)
+            result.append({"skill_id": str(a.skill_id), "name": skill.name if skill else "unknown"})
+        return result
+
+    async def delete_discussion(self, disc_id: str, user_id: str) -> None:
+        uid = uuid.UUID(user_id)
+        d = await self.repo.find_by_id(uuid.UUID(disc_id))
+        if not d:
+            raise BusinessException(ErrorCode.DISCUSSION_NOT_FOUND)
+        if str(d.owner_id) != user_id:
+            raise BusinessException(ErrorCode.FORBIDDEN, "Cannot delete another user's discussion")
+
+        # Stop active orchestrator if running
+        orch = _active_orchestrators.pop(disc_id, None)
+        if orch and orch.status == "running":
+            orch.status = "error"
+
+        await self.repo.soft_delete(uuid.UUID(disc_id))
+
+        # P1: Audit deletion
+        audit = AuditRepository(self.repo.session)
+        await audit.record(uuid.UUID(disc_id), uid, "discussion.delete", {
+            "topic": d.topic,
+        })
 
     async def intervene(self, disc_id: str, user_id: str, content: str) -> None:
         """Inject user intervention into the active orchestrator."""
@@ -168,10 +249,16 @@ class DiscussionService:
             "speaker": f"user:{user_id}",
             "content": content,
         })
+        # Resolve username for display
+        from backend.services.user.repository import UserRepository
+        user_repo = UserRepository(self.repo.session)
+        user = await user_repo.find_by_id(uuid.UUID(user_id))
+        username = user.username if user else user_id
+
         # Push user_intervened SSE event
         r = await _get_redis()
         payload = json.dumps({"event": "user_intervened", "data": {
-            "user_id": user_id, "content": content,
+            "user_id": user_id, "username": username, "content": content,
         }}, ensure_ascii=False)
         await r.publish(f"discussion:{disc_id}:events", payload)
 
@@ -182,7 +269,8 @@ class DiscussionService:
         return [DiscussionService._msg_to_response(m) for m in msgs]
 
     @staticmethod
-    def _to_response(d) -> DiscussionResponse:
+    def _to_response(d, agents: list[dict] | None = None) -> DiscussionResponse:
+        from backend.services.discussion.schemas import AgentInfo
         return DiscussionResponse(
             id=str(d.id),
             owner_id=str(d.owner_id),
@@ -193,6 +281,7 @@ class DiscussionService:
             ended_at=d.ended_at.isoformat() if d.ended_at else None,
             created_at=d.created_at.isoformat(),
             updated_at=d.updated_at.isoformat(),
+            agents=[AgentInfo(**a) for a in (agents or [])],
         )
 
     @staticmethod

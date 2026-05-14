@@ -61,14 +61,15 @@ export function Editor() {
   const { data: fileList = [] } = useQuery({
     queryKey: ["characterFiles", id],
     queryFn: () => getCharacterFiles(id!).then(d => (Array.isArray(d) ? d : d?.files || [])),
-    enabled: !!id && !isGenerating,
-    staleTime: 10_000,
+    enabled: !!id,
+    staleTime: 3_000,
+    refetchInterval: isGenerating ? 3000 : false,
   });
 
   const { data: code = "" } = useQuery({
     queryKey: ["characterFile", id, activeFile],
     queryFn: () => getCharacterFiles(id!, activeFile).then(d => (typeof d === "string" ? d : d.content || "")),
-    enabled: !!id && !!activeFile && !isGenerating,
+    enabled: !!id && !!activeFile,
     staleTime: 30_000,
   });
 
@@ -81,6 +82,10 @@ export function Editor() {
       try {
         const payload = JSON.parse(event.data);
         setLogs((prev) => [...prev, payload]);
+        if (payload.level === "file") {
+          // New file written — refresh file tree immediately
+          queryClient.invalidateQueries({ queryKey: ["characterFiles", id] });
+        }
         if (payload.level === "done" || payload.level === "error") {
           es.close();
           queryClient.invalidateQueries({ queryKey: ["character", id] });
@@ -94,6 +99,7 @@ export function Editor() {
     es.onerror = () => {
       es.close();
       queryClient.invalidateQueries({ queryKey: ["character", id] });
+      queryClient.invalidateQueries({ queryKey: ["characterFiles", id] });
     };
     return () => es.close();
   }, [id, isViewMode, isGenerating]);
@@ -117,6 +123,7 @@ export function Editor() {
       case "sub": return <Box size={14} className="text-indigo-400 mt-0.5 flex-shrink-0" />;
       case "tool": return <Search size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />;
       case "done": return <CheckCircle2 size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />;
+      case "file": return <FileText size={14} className="text-cyan-400 mt-0.5 flex-shrink-0" />;
       default: return <Terminal size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />;
     }
   };
@@ -146,7 +153,7 @@ export function Editor() {
   const generationFailed = character?.status === "error" || logs.some(l => l.level === "error");
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-50">
+    <div className="h-full w-full flex flex-col bg-slate-50">
       {/* Top Bar */}
       <div className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-4 flex-shrink-0">
         <div className="flex items-center gap-4">
@@ -181,10 +188,10 @@ export function Editor() {
       {/* Three-Panel Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: File Tree */}
-        <div className="w-64 bg-slate-50 border-r border-slate-200 overflow-y-auto flex-shrink-0">
+        <div className="w-56 bg-slate-50 border-r border-slate-200 overflow-y-auto flex-shrink-0">
           <div className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">资源管理器</div>
           <div className="px-2 space-y-1">
-            {isGenerating ? (
+            {files.length === 0 && isGenerating ? (
               <div className="p-4 text-center text-slate-400 text-sm">
                 <Loader2 className="animate-spin mx-auto mb-2" size={18} />
                 等待文件生成…
@@ -198,7 +205,7 @@ export function Editor() {
         {/* Center: Editor + Right: Progress Panel */}
         <div className="flex-1 flex bg-white relative min-w-0">
           <div className="flex-1 relative">
-            {isGenerating ? (
+            {files.length === 0 && isGenerating ? (
               <div className="flex items-center justify-center h-full text-slate-400">
                 <div className="text-center">
                   <Cpu className="mx-auto mb-3 text-indigo-400 animate-pulse" size={32} />
@@ -216,7 +223,7 @@ export function Editor() {
 
           {/* Right: Generation Progress Panel */}
           {!isViewMode && (isGenerating || logs.length > 0) && (
-            <div className="w-[420px] bg-slate-950 border-l border-slate-800 flex flex-col flex-shrink-0 z-10 text-slate-300 relative overflow-hidden">
+            <div className="w-[360px] bg-slate-950 border-l border-slate-800 flex flex-col flex-shrink-0 z-10 text-slate-300 relative overflow-hidden">
               {/* Ambient lighting */}
               <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -257,6 +264,7 @@ export function Editor() {
                         log.level === "main" ? "text-amber-200/90 font-semibold text-[13px] mt-6 first:mt-0"
                         : log.level === "sub" ? "text-indigo-200/80 ml-2 border-l border-indigo-500/20 pl-3 py-0.5"
                         : log.level === "tool" ? "text-slate-500 ml-6"
+                        : log.level === "file" ? "text-cyan-400/80 ml-2 border-l border-cyan-500/30 pl-3 py-0.5"
                         : log.level === "done" ? "text-emerald-400 font-semibold mt-6 bg-emerald-950/30 p-3 rounded-lg border border-emerald-900/50"
                         : log.level === "error" ? "text-red-400 font-semibold mt-4 bg-red-950/20 p-3 rounded-lg border border-red-900/30" : ""
                       }`}>

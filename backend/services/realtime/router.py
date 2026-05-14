@@ -48,9 +48,9 @@ async def discussion_stream(
                         "content": m.content,
                         "round": m.round_number,
                         "message_type": m.message_type,
+                        "confidence": m.confidence,
                     }, ensure_ascii=False)
-                    event_type = "agent_speak_chunk" if m.message_type == "agent_speak" else m.message_type
-                    yield f"event: {event_type}\ndata: {data}\n\n"
+                    yield f"event: catchup_msg\ndata: {data}\n\n"
 
                 if count > 0:
                     yield f"event: catchup_end\ndata: {{}}\n\n"
