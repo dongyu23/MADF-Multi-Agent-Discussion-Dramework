@@ -153,16 +153,20 @@ export function DiscussionRoom() {
     es.addEventListener("agent_speak_chunk", (e) => {
       const d = JSON.parse(e.data);
       currentSpeakRef.current.text += d.content || "";
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.type === "agent" && last.mode === "spoken" && last.agent === currentSpeakRef.current.agent) {
-          return [...prev.slice(0, -1), { ...last, text: currentSpeakRef.current.text }];
-        }
-        return [...prev, { id: Date.now(), type: "agent", mode: "spoken", text: currentSpeakRef.current.text, agent: currentSpeakRef.current.agent }];
-      });
+      // Do NOT add to messages during streaming — the `speaking` indicator
+      // renders the live typewriter bubble.  Only persist on `agent_speak_end`.
     });
 
-    es.addEventListener("agent_speak_end", () => { setSpeaking(null); currentSpeakRef.current = { agent: "", text: "" }; });
+    es.addEventListener("agent_speak_end", (e) => {
+      const d = JSON.parse(e.data);
+      setSpeaking(null);
+      setMessages((prev) => [...prev, {
+        id: Date.now(), type: "agent", mode: "spoken",
+        text: d.content || currentSpeakRef.current.text,
+        agent: d.agent_name || currentSpeakRef.current.agent,
+      }]);
+      currentSpeakRef.current = { agent: "", text: "" };
+    });
     es.addEventListener("host_summary_start", () => {
       const newId = Date.now();
       hostStreamRef.current = { text: "", id: newId };
@@ -286,11 +290,12 @@ export function DiscussionRoom() {
                     </motion.div>
                   )}
                   <motion.div
-                    layout
-                    initial={{ opacity: 0, y: 16, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    initial={msg.type === "agent" && msg.mode === "spoken" ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.97 }}
+                    animate={msg.type === "agent" && msg.mode === "spoken" ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
-                    transition={{ type: "spring", stiffness: 260, damping: 26, delay }}
+                    transition={msg.type === "agent" && msg.mode === "spoken"
+                      ? { duration: 0.2, delay }
+                      : { type: "spring", stiffness: 260, damping: 26, delay }}
                     className={`flex gap-4 ${msg.type === "user" ? "flex-row-reverse" : ""}`}
                   >
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm shadow-sm ${msg.type === "host" ? "bg-amber-100 text-amber-700" : msg.type === "user" ? "bg-indigo-600 text-white" : "bg-slate-800 text-white"}`}>

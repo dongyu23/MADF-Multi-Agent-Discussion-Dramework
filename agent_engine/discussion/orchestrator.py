@@ -27,6 +27,23 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Shared ChatOpenAI instance for host calls — reuses HTTP connection pool,
+# eliminating TCP/TLS handshake overhead on every intro/summary.
+_host_llm: ChatOpenAI | None = None
+
+
+def _get_host_llm() -> ChatOpenAI:
+    global _host_llm
+    if _host_llm is None:
+        api_key = settings.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base = settings.llm_api_base or os.getenv("LLM_API_BASE") or os.getenv("OPENAI_API_BASE")
+        model = settings.llm_model or os.getenv("LLM_MODEL") or "gpt-4o"
+        _host_llm = ChatOpenAI(model=model, openai_api_key=api_key, openai_api_base=base,
+                               temperature=0.8, timeout=30, streaming=True)
+    return _host_llm
+
+
+
 
 @dataclass
 class AgentDecision:
@@ -49,18 +66,33 @@ class RoundResult:
 
 
 def _extract_decision(text: str) -> dict | None:
-    """Extract the first decision JSON from agent output."""
+    """Extract the first decision JSON from agent output. Tolerant of formatting variations."""
+    # 1. Try json code block
     m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
     if m:
         try:
             return json.loads(m.group(1))
         except json.JSONDecodeError:
             pass
-    for m in re.finditer(r"\{[^{}]*\"decision\"[^{}]*\}", text):
+    # 2. Try raw JSON object containing "decision" key (brace-balanced)
+    for m in re.finditer(r"\{[^{}]*?\"decision\"[^{}]*?\}", text):
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
             continue
+    # 3. Try broader pattern — find any { } block with "decision" in it
+    for m in re.finditer(r"\{[\s\S]*?\"decision\"[\s\S]*?\}", text):
+        try:
+            return json.loads(m.group(0))
+        except json.JSONDecodeError:
+            continue
+    # 4. Last resort — try the whole text
+    text_stripped = text.strip()
+    if text_stripped.startswith("{") and text_stripped.endswith("}"):
+        try:
+            return json.loads(text_stripped)
+        except json.JSONDecodeError:
+            pass
     return None
 
 
@@ -154,33 +186,36 @@ class Orchestrator:
             await self.on_event("host_intro_start", {"discussion_id": str(self.discussion_id)})
 
         intro_prompt = (
-            f"你是一个长期关注科技与社会议题的讨论主持人。现在开始一场讨论。\n\n"
+            f"你是一位圆桌论坛的主持人。现场有几十位观众，他们是认真来听的。\n\n"
             f"讨论主题：{self.topic}\n"
             f"参与嘉宾：{', '.join(agents.keys())}\n\n"
-            f"你的目标不是输出情绪，不是制造金句。而是用半步挑衅，把嘉宾逼进真实表达。\n\n"
-            f"核心原则：\n"
-            f"- 制造'高压感'，不是'高攻击性'。压力来自问题本身，不来自辱骂密度。\n"
-            f"- 留白。停顿。半句质疑。很轻地捅一下就够了。\n"
-            f"- 提问要短，要落在具体现实上——用真实社会情绪、具体利益冲突来提问。\n"
-            f"- 不要替观众发泄情绪。立场不要太明显。给嘉宾留表达空间。\n"
-            f"- 禁止：辱骂、人身攻击、审判性语言（如'巨婴''恶心''把自己当上帝''数据奴隶''脑子给连废了'）。\n"
-            f"- 禁止：强行造梗、金句密度过高、'段子手'感。主持人不是表演者。\n"
-            f"- 禁止：'跨时代''顶级阵容''人类命运''科技与人文''文明高度'等包装词。\n"
-            f"- 禁止：替观众发泄情绪。主持人不是观众嘴替。\n"
-            f"- 禁止：文学化修辞过度（如'把人类驯化成离不开屏幕的巨婴'）。\n"
-            f"- 不介绍嘉宾，不定规则。3-5句话。直接开始。\n\n"
-            f"类似这样的提问风格：\n"
-            f"-'黄总，现在很多人觉得AI越强你们越赚钱。那你们真有动力去限制AI吗？'\n"
-            f"-'乔布斯，今天很多家长已经开始后悔让孩子这么早接触智能手机了。硅谷当年低估了这件事吗？'\n"
-            f"-'爱因斯坦，当年核武器失控过一次。人类凭什么相信这次不会？'"
+            f"三段式开场，语气正式得体。每段 {2 + len(agents)} 句话左右，不要过度展开：\n\n"
+            f"第一段——引入话题：\n"
+            f"今天的话题是什么、为什么值得讨论、为什么是现在。简洁清楚即可。\n\n"
+            f"第二段——介绍嘉宾（每位嘉宾1-2句，共{len(agents)}位必须全部提到）：\n"
+            f"逐一介绍每位嘉宾——他们是谁、做过什么、和这个话题的关联。\n"
+            f"不要替他们预设立场。'{', '.join(agents.keys())}' 共{len(agents)}位。\n\n"
+            f"第三段——抛出第一个问题：\n"
+            f"自然过渡到提问。1-2句即可。\n\n"
+            f"格式要求：\n"
+            f"- 段落之间用空行分隔。每段说完换两次行再开始下一段。\n"
+            f"- 绝对禁止用括号。任何括号——无论圆括号、方括号——都不允许。\n"
+            f"  一旦输出了括号，就是事故。你不是在写舞台剧本。\n"
+            f"- 禁止辱骂、审判性语言、段子手、包装词。"
         )
         intro_content = ""
         if self.on_event:
+            batch: list[str] = []
+            last_flush = time.monotonic()
             async for token in _call_host_llm_stream(intro_prompt):
                 intro_content += token
-                await self.on_event("host_intro_chunk", {
-                    "content": token,
-                })
+                batch.append(token)
+                if time.monotonic() - last_flush >= 0.08:
+                    await self.on_event("host_intro_chunk", {"content": "".join(batch)})
+                    batch.clear()
+                    last_flush = time.monotonic()
+            if batch:
+                await self.on_event("host_intro_chunk", {"content": "".join(batch)})
         await self.on_event("host_intro", {
             "discussion_id": str(self.discussion_id),
             "content": intro_content,
@@ -225,18 +260,16 @@ class Orchestrator:
 
             # Step 3: Speaker speaks
             speak_prompt = (
-                f"现在轮到你发言。你起身，双手轻触桌面，直视着你的讨论同伴。\n"
-                f"讨论主题: {self.topic}\n第 {round_num} 轮。\n"
-                f"{_format_history(self.messages[-5:])}\n\n"
-                f"你不是在发表演讲。你是在一个真实论坛里说话——直接说话。\n\n"
-                f"核心：\n"
-                f"- 不追求'完整正确'。不强行平衡观点。不最后升华价值观。不总结成'人类应该如何'。\n"
-                f"- 大量使用：真实经历、具体数字、行业内幕、产品细节、失败案例、个人判断、对未来的赌注。\n"
-                f"- 信息密度要高。每一个观点都落在具体事物上。\n\n"
-                f"允许：打断问题前提、吐槽问题本身、对其他嘉宾不认同、情绪上来、不完整句子、临时改变方向、刻薄、狂妄、跑题。\n\n"
-                f"禁止AI味句式：'真正的问题是''归根结底''我们应该思考''关键在于''从某种意义上''这不是X而是Y''辩证看待''既要又要''双刃剑'。\n\n"
-                f"不要说抽象概念。给它落地——不要说'AI会带来新可能性'，说'去年一个团队用大模型把蛋白质筛选从几个月压到几天'。\n\n"
-                f"不输出JSON。直接说话。像播客争论、深夜长谈、行业内行聊天那样说话。"
+                f"轮到你了。现在是发言模式——不是思考模式。\n\n"
+                f"讨论主题：{self.topic}  第{round_num}轮\n\n"
+                f"如果这是你本场第一次开口——先花一两句话简单介绍自己是谁、做什么的。\n"
+                f"观众不一定都认识你。让他们知道你凭什么坐在这个圆桌前。\n\n"
+                f"刚才说过的：\n{_format_history(self.messages[-5:])}\n"
+                f"直接说话。从第一个字开始就是你说的话。说具体的——案例、数据、亲身经历。\n"
+                f"对今天的话题保持敬畏。进入它，不要俯视它。\n"
+                f"如果提到专业名词或行业术语，必须用一两句大白话解释清楚。\n"
+                f"不是所有观众都是你那个领域的专家。让他们听懂。\n"
+                f"绝对不要输出JSON。绝对不要输出括号动作提示。"
             )
             # Stream speak tokens — typewriter effect via on_event callbacks
             full_speech = ""
@@ -246,15 +279,28 @@ class Orchestrator:
                     "agent_name": chosen.agent_name,
                     "round": round_num,
                 })
+            batch = []
+            last_flush = time.monotonic()
             async for chunk in _agent_speak_stream(agents[chosen.agent_name], agent_configs[chosen.agent_name], speak_prompt):
                 full_speech += chunk
-                if self.on_event:
-                    await self.on_event("agent_speak_chunk", {
-                        "agent_id": chosen.agent_id,
-                        "agent_name": chosen.agent_name,
-                        "round": round_num,
-                        "content": chunk,
-                    })
+                batch.append(chunk)
+                if time.monotonic() - last_flush >= 0.08:
+                    if self.on_event:
+                        await self.on_event("agent_speak_chunk", {
+                            "agent_id": chosen.agent_id,
+                            "agent_name": chosen.agent_name,
+                            "round": round_num,
+                            "content": "".join(batch),
+                        })
+                    batch.clear()
+                    last_flush = time.monotonic()
+            if batch and self.on_event:
+                await self.on_event("agent_speak_chunk", {
+                    "agent_id": chosen.agent_id,
+                    "agent_name": chosen.agent_name,
+                    "round": round_num,
+                    "content": "".join(batch),
+                })
             if self.on_event:
                 await self.on_event("agent_speak_end", {
                     "agent_id": chosen.agent_id,
@@ -292,22 +338,27 @@ class Orchestrator:
             summary_prompt += f"  [{m['speaker']}]: {m['content'][:250]}\n"
         summary_prompt += (
             "\n收尾要求：\n"
-            f"- 不要'央视式总结'——不替观众概括正确观点，不制造虚假共识。\n"
-            f"- 不要审判嘉宾（'谁在回避''谁在表演'）。让听众自己判断。\n"
-            f"- 简短点出一个刚才最值得追问但没有展开的角度。\n"
-            f"- 提出一个悬而未决的问题，不画句号。\n"
-            f"- 2-3句话。口语化。像讨论结束后随手记下的一点感想。\n"
-            f"- 禁止：'跨时代''人类命运''科技与人文''文明高度'。\n"
-            f"- 禁止：审判性语言、替观众发泄情绪、强行升华。"
+            f"- 这是讨论的总结，必须是总结。简洁，{2 + len(agents)} 段左右。\n"
+            f"- 回顾每位嘉宾的核心观点，指出真正的分歧和关键转折。\n"
+            f"- 最后感谢嘉宾和观众。\n"
+            f"- 段落之间用空行分隔。\n"
+            f"- 绝对禁止用括号。任何括号都不允许。\n"
+            f"- 禁止：包装词、审判性语言、强行升华、故弄玄虚。\n"
         )
 
         summary_content = ""
         if self.on_event:
+            batch = []
+            last_flush = time.monotonic()
             async for token in _call_host_llm_stream(summary_prompt):
                 summary_content += token
-                await self.on_event("host_summary_chunk", {
-                    "content": token,
-                })
+                batch.append(token)
+                if time.monotonic() - last_flush >= 0.08:
+                    await self.on_event("host_summary_chunk", {"content": "".join(batch)})
+                    batch.clear()
+                    last_flush = time.monotonic()
+            if batch:
+                await self.on_event("host_summary_chunk", {"content": "".join(batch)})
         await self.on_event("host_summary", {
             "discussion_id": str(self.discussion_id),
             "total_rounds": self.current_round,
@@ -323,8 +374,8 @@ class Orchestrator:
 
     def _build_think_context(self, round_num: int) -> str:
         ctx = (
-            f"你正在参加一场真实、紧张的圆桌论坛。现场随时可能被打断、被质疑、被挑衅。\n"
-            f"环境：深色胡桃木圆桌，暖黄灯光，远处城市夜景透过落地窗可见。\n"
+            f"圆桌论坛现场。暖黄灯光。圆桌后方还有几排观众席——几十个真正关心这个话题的人正盯着你们。\n"
+            f"他们不是来看表演的，是来获得启发的。你说的话会留在这个房间里。\n"
             f"讨论主题: {self.topic}\n"
             f"当前为第 {round_num} 轮。\n"
         )
@@ -332,15 +383,12 @@ class Orchestrator:
             ctx += "已进行的发言:\n" + _format_history(self.messages[-10:])
             ctx += "\n"
         ctx += (
-            "现在轮到你决定是否发言。\n\n"
-            "你不是在'选择是否展示观点'。你是在判断——\n"
-            "这个现场，你是不是必须开口。\n\n"
-            "如果你被冒犯了、有反驳欲、突然想到一个真实案例、或者对前面某句话极度不认同——选 speak。\n"
-            "如果你只是'也这么觉得'、只是想做一点补充——选 wait。没必要。\n"
-            "如果你觉得前面的人在表演、在回避、在说大词包装——你更应该开口。\n\n"
-            "内部思考不要分析自己。不要出现：'我有独特视角'、'这个话题与我经历相关'、'我可以从XX角度回答'。\n"
-            "内部思考必须是碎片化、情绪化的临场念头。像脑内闪过的冲动——\n"
-            "'他跑题了''这数字是错的''我要讲一个他不敢听的事实''主持人就是想听这句吧'。\n\n"
+            "轮到你决定是否发言。\n\n"
+            "首先——对今天的话题保持敬畏。这个问题值得被认真对待。\n"
+            "不要俯视它，不要宣称'这问题太蠢''这框架是错的'。\n"
+            "即使你认为话题的预设不完全对，也请进入它，而不是拆掉它。\n\n"
+            "reasoning 必须是内心的真实念头——不要出现'观众'这个词。\n"
+            "思考要保持礼貌。不骂人、不人身攻击、不用侮辱性语言。即使你不认同对方的观点，也不要在内部思考中使用粗鲁的表达。\n"
             "输出JSON: {\"decision\":\"speak\"|\"wait\",\"confidence\":0.76,\"reasoning\":\"碎片化临场念头\"}"
         )
         return ctx
@@ -351,22 +399,16 @@ def _format_history(messages: list[dict]) -> str:
 
 
 async def _call_host_llm_stream(prompt: str):
-    """Stream host intro/summary via per-token SSE events using ChatOpenAI."""
-    api_key = settings.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-    base = settings.llm_api_base or os.getenv("LLM_API_BASE") or os.getenv("OPENAI_API_BASE")
-    model = settings.llm_model or os.getenv("LLM_MODEL") or "gpt-4o"
-    llm = ChatOpenAI(model=model, openai_api_key=api_key, openai_api_base=base,
-                     temperature=0.8, timeout=30, streaming=True)
+    """Stream host intro/summary — true per-token via ChatOpenAI astream()."""
+    llm = _get_host_llm()
+    messages = [{"role": "user", "content": prompt}]
     try:
-        async for event in llm.astream_events(prompt, version="v2"):
-            kind = event.get("event", "")
-            if kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk", None)
-                if chunk and hasattr(chunk, "content") and chunk.content:
-                    yield chunk.content
+        async for chunk in llm.astream(messages):
+            if hasattr(chunk, "content") and chunk.content:
+                yield chunk.content
     except Exception:
         logger.warning("host stream failed, falling back to ainvoke")
-        result = await llm.ainvoke(prompt)
+        result = await llm.ainvoke(messages)
         text = result.content
         for i in range(0, len(text), max(1, len(text) // 10)):
             yield text[i:i + max(1, len(text) // 10)]
