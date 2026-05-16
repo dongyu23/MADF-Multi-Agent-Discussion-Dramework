@@ -9,6 +9,7 @@ Each round:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -65,6 +66,17 @@ class RoundResult:
     was_forced: bool = False
 
 
+def _sanitize_json(text: str) -> str:
+    """Repair common LLM JSON mistakes before parsing."""
+    # Remove trailing commas before } or ] (most common LLM error)
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+    # Fix single-quoted keys/values: replace ' with " for JSON syntax
+    # Only within JSON-like braces to avoid damaging prose
+    text = re.sub(r"'([^']*)':", r'"\1":', text)
+    text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
+    return text
+
+
 def _extract_decision(text: str) -> dict | None:
     """Extract the first decision JSON from agent output. Tolerant of formatting variations."""
     # 1. Try json code block
@@ -73,26 +85,79 @@ def _extract_decision(text: str) -> dict | None:
         try:
             return json.loads(m.group(1))
         except json.JSONDecodeError:
-            pass
+            try:
+                return json.loads(_sanitize_json(m.group(1)))
+            except json.JSONDecodeError:
+                pass
+    # 1b. Try opening ```json without closing ``` (common truncation)
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*$", text)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            try:
+                return json.loads(_sanitize_json(m.group(1)))
+            except json.JSONDecodeError:
+                pass
     # 2. Try raw JSON object containing "decision" key (brace-balanced)
     for m in re.finditer(r"\{[^{}]*?\"decision\"[^{}]*?\}", text):
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
-            continue
+            try:
+                return json.loads(_sanitize_json(m.group(0)))
+            except json.JSONDecodeError:
+                continue
     # 3. Try broader pattern — find any { } block with "decision" in it
     for m in re.finditer(r"\{[\s\S]*?\"decision\"[\s\S]*?\}", text):
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
-            continue
+            try:
+                return json.loads(_sanitize_json(m.group(0)))
+            except json.JSONDecodeError:
+                continue
     # 4. Last resort — try the whole text
     text_stripped = text.strip()
     if text_stripped.startswith("{") and text_stripped.endswith("}"):
         try:
             return json.loads(text_stripped)
         except json.JSONDecodeError:
-            pass
+            try:
+                return json.loads(_sanitize_json(text_stripped))
+            except json.JSONDecodeError:
+                pass
+    # 4b. Find last { that looks like JSON start — handles long Chinese preamble
+    last_brace = text_stripped.rfind('{"decision"')
+    if last_brace >= 0:
+        candidate = text_stripped[last_brace:]
+        # Find matching } by scanning forward
+        depth = 0
+        end = -1
+        for i, ch in enumerate(candidate):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end > 0:
+            candidate = candidate[:end]
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                try:
+                    return json.loads(_sanitize_json(candidate))
+                except json.JSONDecodeError:
+                    pass
+    # 5. No JSON found — treat free text as reasoning with low confidence
+    # Agent forgot JSON format; extract usable signal from prose.
+    if text_stripped and len(text_stripped) > 10:
+        text_lower = text_stripped.lower()
+        if any(kw in text_lower for kw in ("没有新", "已经说过", "先听", "等等", "wait", "不发言", "先不说")):
+            return {"decision": "wait", "confidence": 0.3, "reasoning": text_stripped[:120]}
+        return {"decision": "speak", "confidence": 0.5, "reasoning": text_stripped[:120]}
     return None
 
 
@@ -105,12 +170,27 @@ async def _agent_think(agent, agent_id: str, agent_name: str, context: str, conf
     raw = result["messages"][-1].content
     parsed = _extract_decision(raw)
     if parsed is None:
+        logger.warning("Agent %s JSON parse failed. Raw output (first 500 chars): %s",
+                       agent_name, raw[:500])
         parsed = {"decision": "wait", "confidence": 0.0, "reasoning": "无法解析思考输出"}
+    conf = round(float(parsed.get("confidence", 0.0)), 2)
+    # Apply deterministic jitter to break up AI-favored round numbers (0.30, 0.50, 0.80 etc.)
+    # Preserves the tenths digit (agent's approximate confidence level),
+    # replaces the hundredths digit with a hash-derived random value that is guaranteed different.
+    seed = int(hashlib.md5(f"{agent_id}:{conf}".encode()).hexdigest()[:8], 16)
+    tenths = int(conf * 10) / 10
+    orig_digit = int(round(conf * 100)) % 10
+    rand_digit = seed % 10
+    if rand_digit == orig_digit:
+        rand_digit = (rand_digit + 1) % 10
+    old_conf = conf
+    conf = round(tenths + rand_digit / 100, 2)
+    logger.debug("Jitter: %s %s→%s", agent_name, old_conf, conf)
     return AgentDecision(
         agent_id=agent_id,
         agent_name=agent_name,
         decision=parsed.get("decision", "wait"),
-        confidence=round(float(parsed.get("confidence", 0.0)), 2),
+        confidence=conf,
         reasoning=str(parsed.get("reasoning", "")),
         raw_output=raw,
     )
@@ -262,13 +342,33 @@ class Orchestrator:
             speak_prompt = (
                 f"轮到你了。现在是发言模式——不是思考模式。\n\n"
                 f"讨论主题：{self.topic}  第{round_num}轮\n\n"
-                f"如果这是你本场第一次开口——先花一两句话简单介绍自己是谁、做什么的。\n"
-                f"观众不一定都认识你。让他们知道你凭什么坐在这个圆桌前。\n\n"
-                f"刚才说过的：\n{_format_history(self.messages[-5:])}\n"
-                f"直接说话。从第一个字开始就是你说的话。说具体的——案例、数据、亲身经历。\n"
-                f"对今天的话题保持敬畏。进入它，不要俯视它。\n"
-                f"如果提到专业名词或行业术语，必须用一两句大白话解释清楚。\n"
-                f"不是所有观众都是你那个领域的专家。让他们听懂。\n"
+                f"## 切题锚点（每次发言前后自检）\n"
+                f"你说的每一段话都必须能直接回答：这和讨论主题有什么关系？\n"
+                f"如果你的故事需要绕三个弯才能联系到主题——删掉它，直接说主题。\n\n"
+                f"## 观众价值（发言结束前自检）\n"
+                f"你说话的时候，后面坐着几十个年轻人。他们不是来听传奇的——\n"
+                f"他们是来做选择的。你的每一段话结束时问自己：\n"
+                f"「一个20岁的人能从这里带走什么？」如果答案模糊，加一句总结。\n\n"
+                f"## 介绍自己（仅第一次发言）\n"
+                f"如果这是你本场第一次开口——用一两句话简单介绍你是谁、做什么的，\n"
+                f"让观众知道你凭什么坐在这里。但不要罗列成就——说你是做什么的、为什么关心这个话题。\n\n"
+                f"## 回应对话\n"
+                f"你不是在独白。先快速回应前面的讨论——别人说了什么让你想接话？\n"
+                f"是补充、是纠正、还是换个角度？让观众看到对话的脉络。\n\n"
+                f"刚才说过的：\n{_format_history(self.messages[-50:])}\n\n"
+                f"## 发言要求（按重要性排序）\n\n"
+                f"0. 不重复。如果你发现自己又在讲之前说过的故事或案例——立刻停下来。\n"
+                f"   每个经历故事在一场讨论中最多只能讲一次。用一句话总结旧故事，\n"
+                f"   然后马上转到新角度。如果找不到新角度——缩短发言，让给别人。\n"
+                f"1. 切题。如果发现自己在说和主题无关的故事——立刻停下来，拉回主题。\n"
+                f"1. 事实边界。你唯一的事实来源是你的技能文件。\n"
+                f"   输出任何数字前, 必须在技能文件中找到确切出处。没有出处 -- 不准说。\n"
+                f"   技能文件说「惊人」-- 你就说「惊人」, 不要自己翻译成「1000倍」。\n"
+                f"2. 术语即解释。每提到一个专业概念, 立刻用一两句大白话解释。\n"
+                f"   标准: 一个高中生能听懂。\n"
+                f"3. 写完整段落。不要用短句分行来模拟语气 -- 信息会碎掉。\n"
+                f"4. 陈述, 不反问。分享困境, 不是分享传奇。观众不需要知道你多成功 --\n"
+                f"   他们想知道你犯过什么错、怎么想的、学到了什么。\n\n"
                 f"绝对不要输出JSON。绝对不要输出括号动作提示。"
             )
             # Stream speak tokens — typewriter effect via on_event callbacks
@@ -334,7 +434,7 @@ class Orchestrator:
             f"共 {self.current_round} 轮发言。\n\n"
             f"讨论内容：\n"
         )
-        for m in self.messages[-15:]:
+        for m in self.messages[-50:]:
             summary_prompt += f"  [{m['speaker']}]: {m['content'][:250]}\n"
         summary_prompt += (
             "\n收尾要求：\n"
@@ -374,28 +474,38 @@ class Orchestrator:
 
     def _build_think_context(self, round_num: int) -> str:
         ctx = (
-            f"圆桌论坛现场。暖黄灯光。圆桌后方还有几排观众席——几十个真正关心这个话题的人正盯着你们。\n"
-            f"他们不是来看表演的，是来获得启发的。你说的话会留在这个房间里。\n"
+            f"圆桌论坛现场。主持人引导着对话节奏。圆桌后方坐着几十个观众——他们是认真来听的。\n"
             f"讨论主题: {self.topic}\n"
             f"当前为第 {round_num} 轮。\n"
         )
         if self.messages:
-            ctx += "已进行的发言:\n" + _format_history(self.messages[-10:])
+            ctx += "已进行的发言:\n" + _format_history(self.messages[-50:])
             ctx += "\n"
         ctx += (
             "轮到你决定是否发言。\n\n"
-            "首先——对今天的话题保持敬畏。这个问题值得被认真对待。\n"
-            "不要俯视它，不要宣称'这问题太蠢''这框架是错的'。\n"
-            "即使你认为话题的预设不完全对，也请进入它，而不是拆掉它。\n\n"
-            "reasoning 必须是内心的真实念头——不要出现'观众'这个词。\n"
-            "思考要保持礼貌。不骂人、不人身攻击、不用侮辱性语言。即使你不认同对方的观点，也不要在内部思考中使用粗鲁的表达。\n"
-            "输出JSON: {\"decision\":\"speak\"|\"wait\",\"confidence\":0.76,\"reasoning\":\"碎片化临场念头\"}"
+            "## 切题检查（每次思考必做）\n"
+            f"本场讨论的唯一主题：{self.topic}\n"
+            "你要说的话必须直接回答这个问题。检查方法：\n"
+            "如果你的故事去掉三句话就没法联系到主题——那不是切题，是跑题。不要强行类比。\n\n"
+            "## 重复检查\n"
+            "前面有人说过你想说的观点了吗？如果只是换个说法说同一件事——不要发言。\n"
+            "如果你已经在本场发过两次以上的言——只有当你手上有全新的、前面没出现过的角度时，才考虑发言。\n\n"
+            "## 判断标准\n"
+            "不是你有没有想说的话——你永远有想说的话。\n"
+            "是你能不能给讨论带来之前没有的东西？\n\n"
+            "## 置信度\n"
+            "恰好两位小数，均匀分布在0.00到1.00之间。\n"
+            "脑中想一个0到100之间的随机整数，除以100。\n"
+            "禁止用0.30、0.50、0.70、0.80这类整齐数字。\n"
+            "刚发过言时confidence偏低（但仍是随机小数）。\n\n"
+            "必须严格输出JSON，不要输出其他任何文字。格式：\n"
+            '{"decision":"speak"|"wait","confidence":0.76,"reasoning":"碎片化临场念头"}\n'
         )
         return ctx
 
 
 def _format_history(messages: list[dict]) -> str:
-    return "\n".join(f"[{m['speaker']}]: {m['content'][:300]}" for m in messages)
+    return "\n".join(f"[{m['speaker']}]: {m['content']}" for m in messages)
 
 
 async def _call_host_llm_stream(prompt: str):
