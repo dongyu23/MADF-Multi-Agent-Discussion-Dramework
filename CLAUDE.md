@@ -291,6 +291,16 @@ POST /api/v1/discussions
 - `backend/services/discussion/service.py` — 讨论生命周期管理 + Redis + Audit 集成
 - `backend/services/realtime/router.py` — `GET /discussions/{id}/stream` SSE 端点
 
+### 角色描述引用语
+- `CharacterService._to_response` 自动从 `SKILL.md` 中提取 `>` 开头的 blockquote 行作为引用语
+- 若有引用语则用它替换 description 字段（取第一条），`_extract_quotes` 最多返回 5 条
+- `CharacterResponse.quotes` 列表同时返回全部引用语，`-perspective` 后缀在 `_to_response` 中统一剥离
+
+### 人物推荐与主题生成
+- `GET /api/v1/characters/recommendations` — LLM 生成 6 位推荐人物（排除已有角色），静态池 46 人作 fallback
+- `GET /api/v1/discussions/generate-topic` — LLM 生成讨论主题（~30字），timeout=8s
+- 两项均用 `ChatOpenAI(temperature=0.9-1.0)` 直调，不走 deepagent 图
+
 ---
 
 ### 前端应用架构
@@ -308,6 +318,18 @@ POST /api/v1/discussions
 - **查询缓存**：`useQuery({ queryKey, queryFn })` 替代 `useState + useEffect + fetch`。相同 `queryKey` 的请求跨页面共享缓存——切换到已访问过的页面瞬间显示缓存数据，后台静默重新验证
 - **变更缓存失效**：`useMutation` 成功后调用 `queryClient.invalidateQueries`，自动刷新相关列表。例如：创建讨论后 Discussions 列表自动更新，画廊复制后 Characters 列表自动刷新
 - **缓存 key 体系**：`["characters"]`、`["discussions"]`、`["gallery"]`、`["character", id]`、`["characterFiles", id]`、`["discussion", id]`
+- **sessionStorage 缓存**：推荐人物、AI 生成主题等非关键数据用 `sessionStorage` 缓存，刷新页面保留，关闭标签页清空
+
+**关键页面**：
+
+| 页面 | chunk | 特性 |
+|------|-------|------|
+| GenerateSkill | ~5KB | LLM 人物推荐（6 个），toggle 开关，`sessionStorage` 缓存，换一个 |
+| NewDiscussion | ~9KB | 主题+时长同行布局，AI 生成主题（换一个），参与者下拉多选，自定义时长输入 |
+| Layout | vendor | 左侧 MADF 图标可点击跳转首页，`<Suspense>` 包裹懒加载页面 |
+| Characters | ~5KB | 描述字段由 SKILL.md `>` 引用语替换，`-perspective` 后缀已剥离 |
+| Gallery | ~5KB | 同上，描述字段由引用语替换 |
+| DiscussionRoom | ~15KB | displayName 去 `-perspective` 后缀，Markdown 渲染 bold/blockquote |
 
 **关键文件**：
 - `frontend/src/app/App.tsx` — QueryClient 配置
@@ -629,6 +651,8 @@ RESTful 资源:
   POST   /api/v1/characters/{id}/copy          # 复制到我的
   POST   /api/v1/discussions/{id}/intervene    # 用户介入发言
   GET    /api/v1/discussions/{id}/audit        # 审计事件查询
+  GET    /api/v1/characters/recommendations    # 人物推荐（LLM 生成，排除已有角色）
+  GET    /api/v1/discussions/generate-topic    # AI 生成讨论主题
 
 SSE 端点:
   GET    /api/v1/discussions/{id}/stream       # 讨论实时流
@@ -953,15 +977,15 @@ test_should_[期望结果]_when_[条件]
 
 | 指标 | 值 |
 |------|-----|
-| API 端点 | 21 个 |
+| API 端点 | 23 个 |
 | 数据库表 | 6 张 |
 | 审计事件 | 全模块 P0/P1/P2 |
 | 集成测试 | 27/27 pass |
 | 单元测试 | 96/96 pass |
 | Docker 容器 | 4 个（backend + frontend + PG + Redis） |
-| 前端页面 | 8 个（登录/首页/角色列表/角色详情/讨论列表/讨论室/画廊/生成角色） |
+| 前端页面 | 9 个（登录/首页/角色列表/角色详情/讨论列表/讨论室/画廊/生成角色/新建讨论） |
 | 前端数据缓存 | @tanstack/react-query，staleTime 30s，gcTime 5min |
-| 前端代码分割 | react-router lazy，9 个页面独立 chunk（3-11KB） |
+| 前端代码分割 | react-router lazy，9 个页面独立 chunk（3-15KB） |
 
 ### 启动命令
 

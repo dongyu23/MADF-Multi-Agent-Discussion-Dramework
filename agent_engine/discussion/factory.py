@@ -141,7 +141,7 @@ def create_roundtable_agent(skill_path: str) -> "CompiledStateGraph":
     if not (skill_dir / "SKILL.md").exists():
         raise FileNotFoundError(f"SKILL.md not found: {skill_path}")
 
-    skill_name = skill_dir.name
+    skill_name = skill_dir.name.replace("-perspective", "")
     source_dir = str(skill_dir.resolve())
     backend = FilesystemBackend(root_dir="/", virtual_mode=True)
 
@@ -160,9 +160,10 @@ def create_roundtable_agent(skill_path: str) -> "CompiledStateGraph":
     prompt = DISCUSSION_SYSTEM_PROMPT.replace("{skill_name}", skill_name)
     prompt += f"\n\n## 你的技能文件\n\n{skill_content}"
 
-    return create_deep_agent(
+    agent = create_deep_agent(
         model=_make_model(),
         system_prompt=prompt,
         skills=[source_dir],
         backend=backend,
     )
+    return agent, prompt

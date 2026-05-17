@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 # eliminating TCP/TLS handshake overhead on every intro/summary.
 _host_llm: ChatOpenAI | None = None
 
+# Shared ChatOpenAI for fast think calls — bypasses deepagent graph overhead.
+# Lower temperature, non-streaming — we just need a JSON decision.
+_think_llm: ChatOpenAI | None = None
+
 
 def _get_host_llm() -> ChatOpenAI:
     global _host_llm
@@ -44,6 +48,15 @@ def _get_host_llm() -> ChatOpenAI:
     return _host_llm
 
 
+def _get_think_llm() -> ChatOpenAI:
+    global _think_llm
+    if _think_llm is None:
+        api_key = settings.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base = settings.llm_api_base or os.getenv("LLM_API_BASE") or os.getenv("OPENAI_API_BASE")
+        model = settings.llm_model or os.getenv("LLM_MODEL") or "gpt-4o"
+        _think_llm = ChatOpenAI(model=model, openai_api_key=api_key, openai_api_base=base,
+                                temperature=0.3, timeout=30)
+    return _think_llm
 
 
 @dataclass
@@ -66,15 +79,65 @@ class RoundResult:
     was_forced: bool = False
 
 
+async def _agent_think_fast(system_prompt: str, agent_id: str, agent_name: str,
+                            context: str) -> AgentDecision:
+    """Direct LLM call for think phase — bypasses deepagent graph for minimal latency."""
+    llm = _get_think_llm()
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": context},
+    ]
+    result = await llm.ainvoke(messages)
+    raw = result.content
+    parsed = _extract_decision(raw)
+    if parsed is None:
+        logger.warning("Agent %s fast-think JSON parse failed. Raw (first 500): %s",
+                       agent_name, raw[:500])
+        parsed = {"decision": "wait", "confidence": 0.0, "reasoning": "无法解析思考输出"}
+    conf = round(float(parsed.get("confidence", 0.0)), 2)
+    # Deterministic jitter
+    seed = int(hashlib.md5(f"{agent_id}:{conf}".encode()).hexdigest()[:8], 16)
+    tenths = int(conf * 10) / 10
+    orig_digit = int(round(conf * 100)) % 10
+    rand_digit = seed % 10
+    if rand_digit == orig_digit:
+        rand_digit = (rand_digit + 1) % 10
+    conf = round(tenths + rand_digit / 100, 2)
+    return AgentDecision(
+        agent_id=agent_id,
+        agent_name=agent_name,
+        decision=parsed.get("decision", "wait"),
+        confidence=conf,
+        reasoning=str(parsed.get("reasoning", "")),
+        raw_output=raw,
+    )
+
+
+
+
 def _sanitize_json(text: str) -> str:
     """Repair common LLM JSON mistakes before parsing."""
     # Remove trailing commas before } or ] (most common LLM error)
     text = re.sub(r",\s*([}\]])", r"\1", text)
     # Fix single-quoted keys/values: replace ' with " for JSON syntax
-    # Only within JSON-like braces to avoid damaging prose
     text = re.sub(r"'([^']*)':", r'"\1":', text)
     text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
     return text
+
+
+def _extract_fields_by_regex(text: str) -> dict | None:
+    """Fallback: extract decision/confidence/reasoning from broken JSON using regex."""
+    dec = re.search(r'"decision"\s*:\s*"(speak|wait)"', text)
+    conf = re.search(r'"confidence"\s*:\s*([\d.]+)', text)
+    # Try to extract reasoning: text between "reasoning":" and the end
+    reason = re.search(r'"reasoning"\s*:\s*"(.*?)(?:"\s*\}?\s*$|$)', text, re.DOTALL)
+    if dec:
+        return {
+            "decision": dec.group(1),
+            "confidence": float(conf.group(1)) if conf else 0.5,
+            "reasoning": reason.group(1)[:200] if reason else "无法解析思考输出",
+        }
+    return None
 
 
 def _extract_decision(text: str) -> dict | None:
@@ -151,6 +214,16 @@ def _extract_decision(text: str) -> dict | None:
                     return json.loads(_sanitize_json(candidate))
                 except json.JSONDecodeError:
                     pass
+    # 4c. Repair truncated JSON — reasoning cut off, missing }"
+    if text_stripped.startswith("{") and '"decision"' in text_stripped and not text_stripped.endswith("}"):
+        try:
+            return json.loads(text_stripped + '"}')
+        except json.JSONDecodeError:
+            pass
+    # 4d. JSON structure broken (e.g. ASCII " inside string) — extract fields via regex
+    parsed = _extract_fields_by_regex(text_stripped)
+    if parsed is not None:
+        return parsed
     # 5. No JSON found — treat free text as reasoning with low confidence
     # Agent forgot JSON format; extract usable signal from prose.
     if text_stripped and len(text_stripped) > 10:
@@ -257,8 +330,11 @@ class Orchestrator:
         # Build agents
         agents: dict[str, Any] = {}
         agent_configs: dict[str, dict] = {}
+        agent_prompts: dict[str, str] = {}
         for name, path in self.agent_skill_paths.items():
-            agents[name] = create_roundtable_agent(path)
+            agent, prompt = create_roundtable_agent(path)
+            agents[name] = agent
+            agent_prompts[name] = prompt
             agent_configs[name] = {"configurable": {"thread_id": f"disc-{self.discussion_id}-{name}"}}
 
         # ── Host intro: streamed LLM opening ──
@@ -309,16 +385,19 @@ class Orchestrator:
             if self.on_event:
                 await self.on_event("round_start", {"round": round_num})
 
-            # Step 1: All agents think
+            # Step 1: All agents think — push each result as it arrives
             context = self._build_think_context(round_num)
             tasks = [
-                _agent_think(agents[name], str(uuid.uuid4()), name, context, agent_configs[name])
+                asyncio.create_task(
+                    _agent_think_fast(agent_prompts[name], str(uuid.uuid4()), name, context)
+                )
                 for name in agents
             ]
-            decisions = await asyncio.gather(*tasks)
-
-            if self.on_event:
-                for d in decisions:
+            decisions: list[AgentDecision] = []
+            for coro in asyncio.as_completed(tasks):
+                d = await coro
+                decisions.append(d)
+                if self.on_event:
                     await self.on_event("agent_think", {
                         "agent_id": d.agent_id,
                         "agent_name": d.agent_name,
@@ -479,7 +558,7 @@ class Orchestrator:
             f"当前为第 {round_num} 轮。\n"
         )
         if self.messages:
-            ctx += "已进行的发言:\n" + _format_history(self.messages[-50:])
+            ctx += "已进行的发言:\n" + _format_history(self.messages[-50:], max_len=300)
             ctx += "\n"
         ctx += (
             "轮到你决定是否发言。\n\n"
@@ -504,7 +583,9 @@ class Orchestrator:
         return ctx
 
 
-def _format_history(messages: list[dict]) -> str:
+def _format_history(messages: list[dict], max_len: int = 0) -> str:
+    if max_len:
+        return "\n".join(f"[{m['speaker']}]: {m['content'][:max_len]}" for m in messages)
     return "\n".join(f"[{m['speaker']}]: {m['content']}" for m in messages)
 
 

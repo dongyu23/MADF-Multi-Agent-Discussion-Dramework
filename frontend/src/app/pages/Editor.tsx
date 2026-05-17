@@ -48,6 +48,11 @@ export function Editor() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setActiveFile("SKILL.md");
+    setLogs([]);
+  }, [id]);
+
   const { data: character, isLoading } = useQuery({
     queryKey: ["character", id],
     queryFn: () => getCharacter(id!),
@@ -81,9 +86,15 @@ export function Editor() {
     es.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        setLogs((prev) => [...prev, payload]);
+        setLogs((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.level === payload.level && last.message === payload.message) {
+            const merged = { ...last, count: (last.count || 1) + 1 };
+            return [...prev.slice(0, -1), merged];
+          }
+          return [...prev, payload];
+        });
         if (payload.level === "file") {
-          // New file written — refresh file tree immediately
           queryClient.invalidateQueries({ queryKey: ["characterFiles", id] });
         }
         if (payload.level === "done" || payload.level === "error") {
@@ -270,11 +281,14 @@ export function Editor() {
                       }`}>
                       {renderLogIcon(log.level)}
                       <div className="flex-1 flex flex-col gap-1.5 leading-relaxed">
-                        <span>{log.message}</span>
-                        {log.extra && log.level !== "done" && (
-                          <span className="text-[10px] text-slate-600/80 bg-slate-900/50 p-1.5 rounded block whitespace-pre-wrap break-all">
-                            {JSON.stringify(log.extra, null, 2)}
-                          </span>
+                        <span>
+                          {log.message}
+                          {(log as any).count > 1 && (
+                            <span className="ml-1.5 text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded-full">×{(log as any).count}</span>
+                          )}
+                        </span>
+                        {log.extra && log.level === "sub" && (
+                          <span className="text-[10px] text-slate-500/70">{log.extra.description?.slice(0, 60)}</span>
                         )}
                         {log.extra && log.level === "done" && (
                           <div className="mt-2 text-emerald-500/70 text-xs">

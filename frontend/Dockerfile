@@ -19,6 +19,14 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Never cache HTML or JS — forces browser to always fetch latest
+    location ~* \.(html|js)$ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        try_files $uri /index.html;
+    }
+
     location /api/ {
         proxy_pass http://backend:8000;
         proxy_http_version 1.1;
@@ -29,6 +37,8 @@ server {
         proxy_buffering off;
         proxy_cache off;
         chunked_transfer_encoding on;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
     }
 }
 NGINX

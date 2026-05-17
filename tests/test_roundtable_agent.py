@@ -27,7 +27,7 @@ SKILL_DIR = (
 @pytest.mark.asyncio
 async def test_single_agent_decision_format():
     """Agent loaded with Steve Jobs skill outputs valid decision JSON."""
-    agent = create_roundtable_agent(str(SKILL_DIR))
+    agent, _ = create_roundtable_agent(str(SKILL_DIR))
 
     prompt = (
         "Discussion topic: Should AI replace human creativity in product design?\n"
@@ -60,7 +60,7 @@ async def test_single_agent_decision_format():
 @pytest.mark.asyncio
 async def test_agent_stays_in_character():
     """Agent responds with character-appropriate style when asked to speak."""
-    agent = create_roundtable_agent(str(SKILL_DIR))
+    agent, _ = create_roundtable_agent(str(SKILL_DIR))
 
     prompt = (
         "Discussion topic: What makes a great product?\n"

@@ -2,8 +2,10 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.exceptions import BusinessException, ErrorCode
 from backend.models.skill import Skill
 
 
@@ -35,7 +37,11 @@ class CharacterRepository:
             model_count=model_count,
         )
         self.session.add(skill)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            raise BusinessException(ErrorCode.SKILL_NAME_EXISTS)
         await self.session.refresh(skill)
         return skill
 

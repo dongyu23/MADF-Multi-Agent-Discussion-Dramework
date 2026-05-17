@@ -9,6 +9,7 @@ export interface CharacterItem {
   is_public: boolean;
   status: string;
   created_at: string;
+  quotes?: string[];
 }
 
 export async function getMyCharacters(page = 1, pageSize = 50) {
@@ -56,5 +57,12 @@ export async function getGallery(search?: string, tag?: string, pageSize = 20, a
 
 export async function copyCharacter(id: string) {
   const res = await client.post(`/characters/${id}/copy`);
+  return res.data.data;
+}
+
+export async function getRecommendations(excludeNames?: string[]) {
+  const params: Record<string, string> = {};
+  if (excludeNames?.length) params.exclude = excludeNames.join(",");
+  const res = await client.get("/characters/recommendations", { timeout: 180_000, params });
   return res.data.data;
 }

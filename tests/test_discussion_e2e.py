@@ -19,8 +19,8 @@ async def test_full_discussion():
     from agent_engine.discussion.factory import create_roundtable_agent
 
     agents = {
-        "Steve Jobs": create_roundtable_agent(str(SKILLS_ROOT / "steve-jobs-perspective")),
-        "Albert Einstein": create_roundtable_agent(str(SKILLS_ROOT / "albert-einstein-perspective")),
+        "Steve Jobs": create_roundtable_agent(str(SKILLS_ROOT / "steve-jobs-perspective"))[0](str(SKILLS_ROOT / "steve-jobs-perspective")),
+        "Albert Einstein": create_roundtable_agent(str(SKILLS_ROOT / "albert-einstein-perspective"))[0](str(SKILLS_ROOT / "albert-einstein-perspective")),
     }
 
     topic = "Is technological progress making humanity wiser or just more efficient?"

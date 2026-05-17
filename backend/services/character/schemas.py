@@ -50,6 +50,7 @@ class CharacterResponse(BaseModel):
     model_count: int | None = None
     created_at: str
     updated_at: str
+    quotes: list[str] = []
 
 
 class CharacterListResponse(BaseModel):
@@ -63,6 +64,16 @@ class CharacterListResponse(BaseModel):
 class FileListResponse(BaseModel):
     files: list[str]
     skill_dir: str
+
+
+class RecommendationItem(BaseModel):
+    name: str
+    description: str
+    query: str  # prefilled search query
+
+
+class RecommendationResponse(BaseModel):
+    items: list[RecommendationItem]
 
 
 class GenerationStatusResponse(BaseModel):

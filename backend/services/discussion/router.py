@@ -13,6 +13,15 @@ from backend.services.discussion.service import DiscussionService, get_discussio
 router = APIRouter(prefix="/api/v1/discussions", tags=["discussion"])
 
 
+@router.get("/generate-topic")
+async def generate_topic(
+    user_id: str = Depends(require_user),
+    svc: DiscussionService = Depends(get_discussion_service),
+) -> Result[str]:
+    topic = await svc.generate_topic()
+    return Result.ok(topic)
+
+
 @router.post("")
 async def create_discussion(
     req: DiscussionCreateRequest,

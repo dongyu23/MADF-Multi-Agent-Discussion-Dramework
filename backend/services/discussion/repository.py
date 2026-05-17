@@ -100,7 +100,7 @@ class DiscussionRepository:
         return msg
 
     async def get_messages(
-        self, discussion_id: uuid.UUID, after: str | None = None, limit: int = 50
+        self, discussion_id: uuid.UUID, after: str | None = None, limit: int = 500
     ) -> list[DiscussionMessage]:
         stmt = select(DiscussionMessage).where(
             DiscussionMessage.deleted_at.is_(None),

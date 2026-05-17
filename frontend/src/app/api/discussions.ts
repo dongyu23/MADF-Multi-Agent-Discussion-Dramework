@@ -29,6 +29,11 @@ export async function intervene(id: string, content: string) {
   return res.data.data;
 }
 
+export async function generateTopic() {
+  const res = await client.get("/discussions/generate-topic");
+  return res.data.data;
+}
+
 export async function deleteDiscussion(id: string) {
   const res = await client.delete(`/discussions/${id}`);
   return res.data.data;

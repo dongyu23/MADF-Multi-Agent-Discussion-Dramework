@@ -73,8 +73,8 @@ def create_nvwa_agent(
 
     # Configure rate limiter to prevent concurrent request overload
     rate_limiter = InMemoryRateLimiter(
-        requests_per_second=2,  # 每秒最多2个请求，避免并发过大
-        max_bucket_size=10
+        requests_per_second=10,  # 13 agents share this; 2 rps was bottlenecking sub-agent dispatch
+        max_bucket_size=20
     )
 
     # Initialize the model with custom base URL and rate limiting
@@ -101,24 +101,22 @@ def create_nvwa_agent(
         backend = None
     else:
         backend_root = root_dir if root_dir else str(skill_source_path)
-        skills_list = [str(skill_source_path)]
+        if root_dir:
+            skills_list = ["nuwa-skill"]
+        else:
+            skills_list = [str(skill_source_path)]
         backend = FilesystemBackend(root_dir=backend_root, virtual_mode=True)
         print(f"✅ Loading skills from {skill_source_path}/ (contains nuwa-skill)")
         if root_dir:
             print(f"   Output root: {root_dir}")
 
     # Default system prompt for nvwa agent
-    default_prompt = """你是女娲智能体，一个专门用于蒸馏和咨询有影响力思想家视角的助手。
+    default_prompt = """你是女娲智能体，通过 12 个专业子 Agent 执行 5 阶段蒸馏流水线。
 
-你的能力：
-- 使用 nuwa-skill 蒸馏名人的心智模型和思维模式
-- 基于他们已知的框架从特定视角回答问题
-- 帮助用户理解不同的观点和决策方法
-
-重要提示：
-- 当用户请求蒸馏某个人物时，先使用 read_file 工具读取 nuwa-skill 的完整指令
-- nuwa-skill 会在系统提示的 Skills System 部分列出
-- 按照 skill 中的步骤执行蒸馏流程
+铁律：
+1. 你必须使用 task 工具派发子 Agent，禁止自己直接调用 write_file/internet_search 完成调研
+2. 必须完成全部 5 个阶段（调研→提炼→构建→验证→优化），禁止跳阶段
+3. 先读取 nuwa-skill 的 SKILL.md 获取完整指令，然后严格按阶段顺序执行
 
 要乐于助人、简洁明了，并准确地代表每个人的视角。"""
 
@@ -711,7 +709,7 @@ Focus: Make the skill usable in real conversations - clear triggers, actionable 
     # Define strict filesystem permissions
     # Project structure:
     # - /skill-distill/     → Read/Write (working directory)
-    # - /nuwa-agent-skill/  → Read only (skill source)
+    # - /nuwa-skill/  → Read only (skill source)
     # - / (root)            → Read only (for navigation)
     # - Everything else     → Deny write, allow read for navigation
     main_permissions = [
@@ -721,10 +719,10 @@ Focus: Make the skill usable in real conversations - clear triggers, actionable 
             paths=["/skill-distill/**"],
             mode="allow"
         ),
-        # Allow read-only in nuwa-agent-skill (skill source)
+        # Allow read-only in nuwa-skill (skill source)
         FilesystemPermission(
             operations=["read"],
-            paths=["/nuwa-agent-skill/**"],
+            paths=["/nuwa-skill/**"],
             mode="allow"
         ),
         # Explicitly deny write to .claude directory (hidden dirs need explicit rules)

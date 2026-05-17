@@ -45,6 +45,23 @@ class DiscussionService:
         self.char_repo = CharacterRepository(session)
         self._owner_id: uuid.UUID | None = None  # Set during create_discussion for audit
 
+    async def generate_topic(self) -> str:
+        import os
+        from langchain_openai import ChatOpenAI
+        from backend.config import settings
+
+        api_key = settings.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base = settings.llm_api_base or os.getenv("LLM_API_BASE") or os.getenv("OPENAI_API_BASE")
+        model = settings.llm_model or os.getenv("LLM_MODEL") or "gpt-4o"
+        llm = ChatOpenAI(model=model, openai_api_key=api_key, openai_api_base=base,
+                          temperature=1.0, timeout=8)
+
+        prompt = ("生成一个适合多智能体圆桌讨论的辩论主题。主题应具有争议性、时代感，适合不同背景的AI角色参与讨论。"
+                   "只返回主题本身（30字以内），不要加引号或解释。")
+
+        result = await llm.ainvoke(prompt)
+        return result.content.strip().strip('"').strip("'").strip("。").strip()
+
     async def create_discussion(
         self, owner_id: str, req: DiscussionCreateRequest
     ) -> DiscussionResponse:
@@ -65,7 +82,7 @@ class DiscussionService:
             if not (skill_dir / "SKILL.md").exists():
                 raise BusinessException(ErrorCode.SKILL_NOT_FOUND,
                                         f"SKILL.md missing for skill '{skill.name}'")
-            skill_paths[skill.name] = str(skill_dir.resolve())
+            skill_paths[skill.name.replace("-perspective", "")] = str(skill_dir.resolve())
 
         # Create discussion
         disc = await self.repo.create_discussion(uid, req.topic, req.duration)
@@ -142,7 +159,7 @@ class DiscussionService:
                         discussion_id=disc_id,
                         round_number=data.get("round", 0),
                         agent_id=None,
-                        agent_name=data.get("agent_name", ""),
+                        agent_name=data.get("agent_name", "").replace("-perspective", ""),
                         message_type="agent_speak",
                         content=data.get("content", ""),
                     )
@@ -152,7 +169,7 @@ class DiscussionService:
                         discussion_id=disc_id,
                         round_number=data.get("round", 0),
                         agent_id=None,
-                        agent_name=data.get("agent_name", ""),
+                        agent_name=data.get("agent_name", "").replace("-perspective", ""),
                         message_type="agent_think",
                         content=data.get("reasoning", ""),
                         confidence=data.get("confidence"),
@@ -215,7 +232,8 @@ class DiscussionService:
         result = []
         for a in agents:
             skill = await self.char_repo.find_by_id(a.skill_id)
-            result.append({"skill_id": str(a.skill_id), "name": skill.name if skill else "unknown"})
+            name = skill.name if skill else "unknown"
+            result.append({"skill_id": str(a.skill_id), "name": name.replace("-perspective", "")})
         return result
 
     async def delete_discussion(self, disc_id: str, user_id: str) -> None:

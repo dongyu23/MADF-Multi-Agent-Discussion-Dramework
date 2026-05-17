@@ -10,7 +10,8 @@ from backend.services.character.schemas import (
     FileContentRequest,
     FileListResponse,
     GalleryQuery,
-    GenerateRequest
+    GenerateRequest,
+    RecommendationResponse,
 )
 from backend.services.character.service import CharacterService, get_character_service
 
@@ -71,6 +72,17 @@ async def gallery(
 ) -> Result:
     q = GalleryQuery(after=after, page_size=page_size, search=search, tag=tag)
     result = await svc.list_gallery(q)
+    return Result.ok(result)
+
+
+@router.get("/recommendations")
+async def get_recommendations(
+    user_id: str = Depends(require_user),
+    svc: CharacterService = Depends(get_character_service),
+    exclude: str | None = None,
+) -> Result[RecommendationResponse]:
+    exclude_list = [n.strip() for n in exclude.split(",") if n.strip()] if exclude else None
+    result = await svc.get_recommendations(user_id, exclude=exclude_list)
     return Result.ok(result)
 
 

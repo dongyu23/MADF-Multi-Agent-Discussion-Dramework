@@ -6,6 +6,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDiscussion, getMessages, buildStreamUrl, intervene } from "../api/discussions";
 import { toast } from "sonner";
 
+function displayName(name: string): string {
+  return name.replace(/-perspective$/, "");
+}
+
+function renderMarkdown(text: string): string {
+  // Blockquote: lines starting with >  become styled blockquote
+  let html = text.replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-slate-300 pl-4 my-2 italic text-slate-600">$1</blockquote>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  return html;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 interface Message {
   id: string | number;
   type: "host" | "agent" | "user";
@@ -21,7 +40,7 @@ function formatMessages(raw: any[]): Message[] {
     type: m.message_type === "host_intro" || m.message_type === "host_summary" ? "host" : m.message_type === "user_intervene" ? "user" : "agent",
     mode: m.message_type === "agent_think" ? "thought" : "spoken",
     text: m.content,
-    agent: m.agent_name || "系统",
+    agent: displayName(m.agent_name || "系统"),
     confidence: m.confidence,
   }));
 }
@@ -103,7 +122,7 @@ export function DiscussionRoom() {
         type: msgType as "agent" | "host" | "user",
         mode: mode as "thought" | "spoken",
         text: d.content,
-        agent: d.agent_name || "系统",
+        agent: displayName(d.agent_name || "系统"),
         confidence: d.confidence,
       }]);
     });
@@ -141,13 +160,13 @@ export function DiscussionRoom() {
 
     es.addEventListener("agent_think", (e) => {
       const d = JSON.parse(e.data);
-      setMessages((prev) => [...prev, { id: Date.now(), type: "agent", mode: "thought", text: d.reasoning || d.content || "", agent: d.agent_name, confidence: d.confidence }]);
+      setMessages((prev) => [...prev, { id: Date.now(), type: "agent", mode: "thought", text: d.reasoning || d.content || "", agent: displayName(d.agent_name), confidence: d.confidence }]);
     });
 
     es.addEventListener("agent_speak_start", (e) => {
       const d = JSON.parse(e.data);
-      setSpeaking(d.agent_name);
-      currentSpeakRef.current = { agent: d.agent_name, text: "" };
+      setSpeaking(displayName(d.agent_name));
+      currentSpeakRef.current = { agent: displayName(d.agent_name), text: "" };
     });
 
     es.addEventListener("agent_speak_chunk", (e) => {
@@ -163,7 +182,7 @@ export function DiscussionRoom() {
       setMessages((prev) => [...prev, {
         id: Date.now(), type: "agent", mode: "spoken",
         text: d.content || currentSpeakRef.current.text,
-        agent: d.agent_name || currentSpeakRef.current.agent,
+        agent: displayName(d.agent_name || currentSpeakRef.current.agent),
       }]);
       currentSpeakRef.current = { agent: "", text: "" };
     });
@@ -253,8 +272,8 @@ export function DiscussionRoom() {
               <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 {discussion.agents.map((a: any) => (
                   <span key={a.skill_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-medium">
-                    <span className="w-3.5 h-3.5 rounded-full bg-indigo-200 text-indigo-600 flex items-center justify-center text-[8px] font-bold">{a.name.charAt(0)}</span>
-                    {a.name.length > 18 ? a.name.slice(0, 16) + "…" : a.name}
+                    <span className="w-3.5 h-3.5 rounded-full bg-indigo-200 text-indigo-600 flex items-center justify-center text-[8px] font-bold">{displayName(a.name).charAt(0)}</span>
+                    {displayName(a.name).length > 18 ? displayName(a.name).slice(0, 16) + "…" : displayName(a.name)}
                   </span>
                 ))}
               </div>
@@ -270,8 +289,15 @@ export function DiscussionRoom() {
           )}
           <AnimatePresence mode="popLayout">
             {messages.map((msg, index) => {
-              const prevMsg = index > 0 ? messages[index - 1] : null;
-              const isTransition = prevMsg && prevMsg.agent === msg.agent && prevMsg.mode === "thought" && msg.mode === "spoken";
+              // Look back up to 5 messages to find a thought from the same agent.
+              // Needed because multiple agents' think messages are interleaved.
+              const prevThought = (() => {
+                for (let i = index - 1; i >= Math.max(0, index - 5); i--) {
+                  if (messages[i].agent === msg.agent && messages[i].mode === "thought") return messages[i];
+                }
+                return null;
+              })();
+              const isTransition = prevThought && msg.mode === "spoken";
               const delay = Math.min(index * 0.03, 0.3); // stagger up to 300ms
               return (
                 <Fragment key={msg.id}>
@@ -280,7 +306,7 @@ export function DiscussionRoom() {
                       initial={{ opacity: 0, scale: 0.8, y: -8 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 24, delay }}
+                      transition={{ type: "spring", stiffness: 300, damping: 24, delay: delay + 0.3 }}
                       className="flex justify-center my-3"
                     >
                       <span className="text-xs font-medium text-slate-400 bg-slate-100 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm border border-slate-200/50">
@@ -290,11 +316,11 @@ export function DiscussionRoom() {
                     </motion.div>
                   )}
                   <motion.div
-                    initial={msg.type === "agent" && msg.mode === "spoken" ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.97 }}
-                    animate={msg.type === "agent" && msg.mode === "spoken" ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                    initial={msg.type === "agent" && msg.mode === "spoken" ? false : { opacity: 0, y: 16, scale: 0.97 }}
+                    animate={msg.type === "agent" && msg.mode === "spoken" ? {} : { opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
                     transition={msg.type === "agent" && msg.mode === "spoken"
-                      ? { duration: 0.2, delay }
+                      ? { duration: 0 }
                       : { type: "spring", stiffness: 260, damping: 26, delay }}
                     className={`flex gap-4 ${msg.type === "user" ? "flex-row-reverse" : ""}`}
                   >
@@ -307,7 +333,7 @@ export function DiscussionRoom() {
                         {msg.type === "agent" && msg.mode === "thought" && (<span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex items-center gap-1"><Brain size={10} /> 内部思考</span>)}
                         {msg.type === "agent" && msg.mode === "thought" && msg.confidence != null && (<span className="text-[10px] font-mono text-slate-400 bg-slate-200/50 px-1.5 py-0.5 rounded">置信度: {msg.confidence}</span>)}
                       </div>
-                      <div className={`p-4 shadow-sm text-[15px] leading-relaxed ${msg.type === "user" ? "bg-indigo-600 text-white rounded-2xl rounded-tr-none" : msg.type === "host" ? "bg-amber-50 text-amber-900 border border-amber-200/50 rounded-2xl rounded-tl-none" : msg.mode === "thought" ? "bg-slate-50 text-slate-500 border-2 border-dashed border-slate-200 rounded-3xl italic" : "bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-tl-none"}`}>{msg.text}</div>
+                      <div className={`p-4 shadow-sm text-[15px] leading-relaxed ${msg.type === "user" ? "bg-indigo-600 text-white rounded-2xl rounded-tr-none" : msg.type === "host" ? "bg-amber-50 text-amber-900 border border-amber-200/50 rounded-2xl rounded-tl-none" : msg.mode === "thought" ? "bg-slate-50 text-slate-500 border-2 border-dashed border-slate-200 rounded-3xl italic" : "bg-white text-slate-800 border border-slate-200 rounded-2xl rounded-tl-none"}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(escapeHtml(msg.text)) }} />
                     </div>
                   </motion.div>
                 </Fragment>

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   MessageSquare,
   Users,
@@ -40,10 +40,10 @@ export function Layout() {
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
         <div className="h-16 flex items-center px-6 border-b border-slate-200">
-          <div className="flex items-center gap-2 text-indigo-600 font-bold text-xl">
+          <Link to="/" className="flex items-center gap-2 text-indigo-600 font-bold text-xl hover:text-indigo-700 transition-colors">
             <Sparkles className="text-indigo-600" />
             MADF
-          </div>
+          </Link>
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
