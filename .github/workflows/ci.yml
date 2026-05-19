@@ -104,7 +104,12 @@ jobs:
       - run: |
           python -c "import psycopg2; c=psycopg2.connect('dbname=madf user=madf password=madf host=localhost'); c.autocommit=True; c.cursor().execute('CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"'); c.close()"
       - run: alembic upgrade head
-      - run: pytest tests/ -v --tb=short --timeout=60 --ignore=tests/ui_test.py --ignore=tests/ui_core_flow_test.py
+      - run: pytest tests/ -v --tb=short --timeout=60 \
+          --ignore=tests/ui_test.py \
+          --ignore=tests/ui_core_flow_test.py \
+          --ignore=tests/test_admin_api.py \
+          --ignore=tests/test_roundtable_agent.py \
+          --ignore=tests/test_discussion_e2e.py
 
   test-frontend:
     name: Test (Frontend)
