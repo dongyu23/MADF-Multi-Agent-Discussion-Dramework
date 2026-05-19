@@ -148,34 +148,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push backend
+      - name: Build & push unified image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: backend/Dockerfile
+          file: Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf-backend:latest,${{ secrets.DOCKERHUB_USERNAME }}/madf-backend:${{ github.sha }}
-
-      - name: Build & push audit-backend
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: audit_backend/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf-audit-backend:latest,${{ secrets.DOCKERHUB_USERNAME }}/madf-audit-backend:${{ github.sha }}
-
-      - name: Build & push frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: frontend/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf-frontend:latest,${{ secrets.DOCKERHUB_USERNAME }}/madf-frontend:${{ github.sha }}
-
-      - name: Build & push audit-frontend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./audit-frontend
-          file: audit-frontend/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf-audit-frontend:latest,${{ secrets.DOCKERHUB_USERNAME }}/madf-audit-frontend:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/madf:latest,${{ secrets.DOCKERHUB_USERNAME }}/madf:${{ github.sha }}
