@@ -2,7 +2,7 @@
 FROM node:22-alpine AS build-frontend
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm install
 COPY frontend/ ./
 RUN npm run build
 
@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:22-alpine AS build-audit-frontend
 WORKDIR /app
 COPY audit-frontend/package.json audit-frontend/package-lock.json ./
-RUN npm ci
+RUN npm install
 COPY audit-frontend/ ./
 RUN npm run build
 
