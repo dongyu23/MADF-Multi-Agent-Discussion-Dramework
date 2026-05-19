@@ -94,9 +94,11 @@ export function DiscussionRoom() {
     return new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   };
 
-  // Load historical messages (only for completed discussions)
+  // Load historical messages for running AND completed discussions.
+  // Running discussions need this because SSE (Redis Pub/Sub) does not replay
+  // events emitted before the client subscribed — host_intro is typically missed.
   useEffect(() => {
-    if (!id || discussion?.status !== "completed") return;
+    if (!id || discussion?.status === "pending") return;
     getMessages(id).then((msgs) => {
       const items = Array.isArray(msgs) ? msgs : msgs?.items || [];
       setMessages(formatMessages(items));
@@ -128,9 +130,12 @@ export function DiscussionRoom() {
     });
 
     es.addEventListener("host_intro_start", () => {
-      const newId = Date.now();
-      hostStreamRef.current = { text: "", id: newId };
-      setMessages((prev) => [...prev, { id: newId, type: "host", text: "", agent: "主持人" }]);
+      setMessages((prev) => {
+        if (prev.some(m => m.type === "host" && m.agent === "主持人")) return prev;
+        const newId = Date.now();
+        hostStreamRef.current = { text: "", id: newId };
+        return [...prev, { id: newId, type: "host", text: "", agent: "主持人" }];
+      });
     });
 
     es.addEventListener("host_intro_chunk", (e) => {
@@ -187,9 +192,12 @@ export function DiscussionRoom() {
       currentSpeakRef.current = { agent: "", text: "" };
     });
     es.addEventListener("host_summary_start", () => {
-      const newId = Date.now();
-      hostStreamRef.current = { text: "", id: newId };
-      setMessages((prev) => [...prev, { id: newId, type: "host", text: "", agent: "主持人总结" }]);
+      setMessages((prev) => {
+        if (prev.some(m => m.type === "host" && m.agent === "主持人总结")) return prev;
+        const newId = Date.now();
+        hostStreamRef.current = { text: "", id: newId };
+        return [...prev, { id: newId, type: "host", text: "", agent: "主持人总结" }];
+      });
     });
 
     es.addEventListener("host_summary_chunk", (e) => {
@@ -364,7 +372,7 @@ export function DiscussionRoom() {
         </div>
       </div>
       {discussion?.status === "running" && (
-        <div className="bg-white border-t border-slate-200 p-4">
+        <div className="bg-white border-t border-slate-200 p-4 flex-shrink-0">
           <form onSubmit={handleSend} className="max-w-4xl mx-auto flex gap-4">
             <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="介入讨论... (按回车键发送)" className="flex-1 px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:bg-white outline-none transition-all shadow-sm" />
             <button type="submit" disabled={!input.trim()} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3.5 rounded-xl font-bold flex items-center justify-center transition-colors shadow-sm"><Send size={20} /></button>

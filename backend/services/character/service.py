@@ -103,7 +103,7 @@ class CharacterService:
         # P2: Audit manual skill creation
         await self.audit.record(None, uid, "skill.create", {
             "skill_id": str(skill.id), "skill_name": skill_name, "is_public": is_public,
-        })
+        }, level="P2")
         return CharacterService._to_response(skill)
 
     async def list_my_characters(self, owner_id: str, page: int, page_size: int, search: str | None) -> CharacterListResponse:
@@ -134,7 +134,7 @@ class CharacterService:
             await self.audit.record(None, skill.owner_id, "skill.update", {
                 "skill_id": str(skill.id), "skill_name": skill.name,
                 "changed_fields": list(changed.keys()),
-            })
+            }, level="P2")
         return CharacterService._to_response(skill)
 
     async def delete_character(self, skill_id: str, owner_id: str) -> None:
@@ -147,7 +147,7 @@ class CharacterService:
         # P1: Audit destructive deletion
         await self.audit.record(None, skill.owner_id, "skill.delete", {
             "skill_id": str(skill.id), "skill_name": skill.name,
-        })
+        }, level="P1")
         await self.fm.delete_skill_dir(str(skill.owner_id), skill.name)
         await self.repo.soft_delete(skill)
 
@@ -180,7 +180,7 @@ class CharacterService:
         await self.audit.record(None, new_skill.owner_id, "skill.copy", {
             "src_skill_id": str(src_skill.id), "src_owner_id": str(src_skill.owner_id),
             "dst_skill_id": str(new_skill.id),
-        })
+        }, level="P1")
         return CharacterService._to_response(new_skill)
 
     # ── Recommendations ──────────────────────────────────
@@ -199,8 +199,8 @@ class CharacterService:
 
         try:
             items = await self._llm_recommend(existing_names)
-        except Exception:
-            raise BusinessException(ErrorCode.INTERNAL_ERROR, "大模型生成推荐失败，请稍后重试")
+        except Exception as e:
+            raise BusinessException(ErrorCode.INTERNAL_ERROR, "大模型生成推荐失败，请稍后重试") from e
         return RecommendationResponse(items=items)
 
     async def _llm_recommend(self, existing_names: set[str]) -> list[RecommendationItem]:
@@ -226,6 +226,9 @@ class CharacterService:
 
         for attempt in range(2):
             result = await llm.ainvoke(prompt)
+            usage = getattr(result, 'usage_metadata', None) or {}
+            rec_input = usage.get('input_tokens', 0) or 0
+            rec_output = usage.get('output_tokens', 0) or 0
             text = result.content.strip()
             if "```" in text:
                 text = text.split("```")[1]
@@ -257,6 +260,11 @@ class CharacterService:
                         description=d.get("description", ""),
                         query=d.get("query", f"{name}"),
                     ))
+            await self.audit.record(None, None, "llm.recommendation", {
+                "input_tokens": rec_input,
+                "output_tokens": rec_output,
+                "count": len(items),
+            }, level="P2")
             return items
 
         raise RuntimeError("LLM returned malformed JSON twice")
@@ -293,7 +301,7 @@ class CharacterService:
         # P2: Audit file content modification
         await self.audit.record(None, skill.owner_id, "skill.file_write", {
             "skill_id": str(skill.id), "file_path": rel_path,
-        })
+        }, level="P2")
 
     # ── Generation ────────────────────────────────────────
 
@@ -316,7 +324,7 @@ class CharacterService:
         # P0: Audit resource-intensive generation start
         await self.audit.record(None, uid, "skill.generate", {
             "skill_id": str(skill.id), "query": query, "skill_name": skill_name,
-        })
+        }, level="P0")
 
         asyncio.create_task(run_skill_generation(skill.id, owner_id, query, skill_name))
         return CharacterService._to_response(skill)

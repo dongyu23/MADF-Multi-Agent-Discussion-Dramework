@@ -14,7 +14,7 @@ The agent loads nuwa-skill through deepagents' skills system, which:
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Callable, Literal
 import itertools
 from langchain_openai import ChatOpenAI
 from langchain_core.rate_limiters import InMemoryRateLimiter
@@ -32,6 +32,8 @@ def create_nvwa_agent(
     system_prompt: str | None = None,
     enable_langsmith: bool = True,
     root_dir: str | None = None,
+    callbacks: list | None = None,
+    on_search_failover: Callable[[str], Any] | None = None,
 ):
     """
     创建一个用于视角蒸馏和咨询的 Deep Agent。
@@ -84,7 +86,8 @@ def create_nvwa_agent(
         openai_api_base=base_url,
         temperature=0.7,
         timeout=300,  # 5分钟超时
-        rate_limiter=rate_limiter  # 添加速率限制
+        rate_limiter=rate_limiter,  # 添加速率限制
+        callbacks=callbacks or [],  # Token 审计回调
     )
 
     # Get the path to nuwa skill directory
@@ -146,7 +149,9 @@ def create_nvwa_agent(
         ):
             """Search the web for current information about people, topics, articles, papers, interviews, and other online content.
 
-            Uses round-robin load balancing across multiple Tavily API keys if configured.
+            Uses round-robin load balancing with automatic failover across multiple Tavily API keys.
+            When one key fails, the next key is tried immediately (up to all available keys).
+            Failover events are pushed to the frontend via on_search_failover callback.
 
             Args:
                 query: The search query
@@ -157,11 +162,14 @@ def create_nvwa_agent(
             Returns:
                 Search results with titles, URLs, and snippets
             """
+            import asyncio
             import random
             import time
 
-            client = next(client_cycle)
-            for attempt in range(3):
+            max_attempts = len(tavily_clients)
+            last_error = None
+            for attempt in range(max_attempts):
+                client = next(client_cycle)
                 try:
                     return client.search(
                         query=query,
@@ -169,10 +177,21 @@ def create_nvwa_agent(
                         topic=topic,
                         include_raw_content=include_raw_content,
                     )
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    time.sleep((2 ** attempt) + random.uniform(0, 1))
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_attempts - 1:
+                        msg = f"Tavily API Key #{attempt+1} 失败，自动切换到 Key #{attempt+2}…"
+                        if on_search_failover:
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.ensure_future(on_search_failover(msg))
+                                else:
+                                    pass
+                            except RuntimeError:
+                                pass
+                        time.sleep(0.5 + random.uniform(0, 0.5))
+            raise RuntimeError(f"All {max_attempts} Tavily API keys failed. Last error: {last_error}")
 
         search_tools = [internet_search]
         print(f"✅ Tavily web search enabled with {len(tavily_api_keys)} API key(s) (load balanced)")

@@ -161,7 +161,8 @@ def create_nvwa_agent(
         ):
             """Search the web for current information about people, topics, articles, papers, interviews, and other online content.
 
-            Uses round-robin load balancing across multiple Tavily API keys if configured.
+            Uses round-robin load balancing with automatic failover across multiple Tavily API keys.
+            When one key fails, the next key is tried immediately (up to all available keys).
 
             Args:
                 query: The search query
@@ -172,15 +173,25 @@ def create_nvwa_agent(
             Returns:
                 Search results with titles, URLs, and snippets
             """
-            # Get next client in round-robin fashion
-            client = next(client_cycle)
+            import random
+            import time
 
-            return client.search(
-                query=query,
-                max_results=max_results,
-                topic=topic,
-                include_raw_content=include_raw_content
-            )
+            max_attempts = len(tavily_clients)
+            last_error = None
+            for attempt in range(max_attempts):
+                client = next(client_cycle)
+                try:
+                    return client.search(
+                        query=query,
+                        max_results=max_results,
+                        topic=topic,
+                        include_raw_content=include_raw_content
+                    )
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_attempts - 1:
+                        time.sleep(0.5 + random.uniform(0, 0.5))
+            raise RuntimeError(f"All {max_attempts} Tavily API keys failed. Last error: {last_error}")
 
         search_tools = [internet_search]
         print(f"✅ Tavily web search enabled with {len(tavily_api_keys)} API key(s) (load balanced)")

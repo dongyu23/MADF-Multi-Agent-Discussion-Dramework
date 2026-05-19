@@ -37,7 +37,7 @@ class UserService:
         # P1: Audit account creation
         await self.audit.record(None, user.id, "user.register", {
             "username": username, "phone": phone,
-        })
+        }, level="P1")
 
         return token, UserService._to_response(user)
 
@@ -47,20 +47,20 @@ class UserService:
             # P0: Audit failed login — user not found
             await self.audit.record(None, None, "user.login_failed", {
                 "username": username, "reason": "user_not_found",
-            })
+            }, level="P0")
             raise BusinessException(ErrorCode.USER_NOT_FOUND, "Invalid username or password")
 
         if not self.pwd_context.verify(password, user.password_hash):
             # P0: Audit failed login — wrong password
             await self.audit.record(None, user.id, "user.login_failed", {
                 "username": username, "reason": "wrong_password",
-            })
+            }, level="P0")
             raise BusinessException(ErrorCode.WRONG_PASSWORD, "Invalid username or password")
 
         token = self._issue_token(user.id)
 
         # P0: Audit successful login
-        await self.audit.record(None, user.id, "user.login", {"username": username})
+        await self.audit.record(None, user.id, "user.login", {"username": username}, level="P0")
 
         return token, UserService._to_response(user)
 

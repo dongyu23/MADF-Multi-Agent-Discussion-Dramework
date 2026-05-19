@@ -1,3 +1,3 @@
-from backend.services.audit.router import router
+from backend.services.audit.repository import AuditRepository
 
-__all__ = ["router"]
+__all__ = ["AuditRepository"]

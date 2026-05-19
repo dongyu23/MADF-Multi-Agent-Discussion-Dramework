@@ -43,6 +43,7 @@ class DiscussionService:
     def __init__(self, session: AsyncSession):
         self.repo = DiscussionRepository(session)
         self.char_repo = CharacterRepository(session)
+        self.audit = AuditRepository(session)
         self._owner_id: uuid.UUID | None = None  # Set during create_discussion for audit
 
     async def generate_topic(self) -> str:
@@ -60,7 +61,16 @@ class DiscussionService:
                    "只返回主题本身（30字以内），不要加引号或解释。")
 
         result = await llm.ainvoke(prompt)
-        return result.content.strip().strip('"').strip("'").strip("。").strip()
+        usage = getattr(result, 'usage_metadata', None) or {}
+        topic_input = usage.get('input_tokens', 0) or 0
+        topic_output = usage.get('output_tokens', 0) or 0
+        topic_text = result.content.strip().strip('"').strip("'").strip("。").strip()
+        await self.audit.record(None, None, "llm.topic_generation", {
+            "input_tokens": topic_input,
+            "output_tokens": topic_output,
+            "topic": topic_text,
+        }, level="P2")
+        return topic_text
 
     async def create_discussion(
         self, owner_id: str, req: DiscussionCreateRequest
@@ -95,7 +105,7 @@ class DiscussionService:
         await audit.record(disc.id, uid, "discussion.create", {
             "topic": req.topic, "duration": req.duration,
             "character_ids": req.character_ids[:5],
-        })
+        }, level="P1")
 
         # Launch orchestrator in background
         orchestrator = Orchestrator(
@@ -113,12 +123,30 @@ class DiscussionService:
 
     async def _run_orchestrator(self, disc_id: uuid.UUID, orch: Orchestrator) -> None:
         """Background task: runs orchestrator with its own independent DB session."""
+        from backend.services.character.generation_service import _patch_chatopenai, TokenAccumulator
+        _patch_chatopenai()
+        token_acc = TokenAccumulator()
+        token_acc.activate()
         try:
             results = await orch.run()
+            token_acc.deactivate()
+            # Write accumulated token data to discussion_end audit event
+            from backend.deps import async_session_factory
+            async with async_session_factory() as bg_session:
+                audit = AuditRepository(bg_session)
+                await audit.record(disc_id, None, "discussion_end", {
+                    "total_rounds": len(results),
+                    "input_tokens": token_acc.input_tokens,
+                    "output_tokens": token_acc.output_tokens,
+                    "total_tokens": token_acc.total_tokens,
+                    "llm_call_count": token_acc.llm_call_count,
+                }, level="P1")
             # Persist complete messages (agent_think + agent_speak were written by event handler)
             await self._finalize_discussion(disc_id)
-            logger.info("Discussion %s completed: %d rounds", disc_id, len(results))
+            logger.info("Discussion %s completed: %d rounds, %s tokens",
+                         disc_id, len(results), token_acc.total_tokens)
         except Exception as e:
+            token_acc.deactivate()
             logger.exception("Discussion %s failed", disc_id)
             await self._fail_discussion(disc_id, str(e))
 
@@ -136,7 +164,7 @@ class DiscussionService:
             audit = AuditRepository(bg_session)
             await audit.record(disc_id, self._owner_id, "discussion.error", {
                 "error": error[:500],
-            })
+            }, level="P1")
 
     def _make_event_handler(self, disc_id: uuid.UUID):
         """Create async callback: orchestrator events → Redis + PG messages."""
@@ -192,21 +220,17 @@ class DiscussionService:
                         content=data.get("content", ""),
                     )
 
-                elif event_type == "user_intervened":
-                    await repo.add_message(
-                        discussion_id=disc_id,
-                        round_number=0, agent_id=None,
-                        agent_name=data.get("username", data.get("user_id", "用户")),
-                        message_type="user_intervene",
-                        content=data.get("content", ""),
-                    )
-
-                # 3. Business audit for significant events
-                if event_type in ("discussion_end", "discussion_error", "agent_speak_end"):
+                # 3. Business audit for LLM events (with token tracking)
+                if event_type in ("discussion_end", "discussion_error",
+                                  "agent_think", "agent_speak_end",
+                                  "host_intro", "host_summary"):
                     audit = AuditRepository(bg_session)
-                    await audit.record(disc_id, owner_id, event_type, {
-                        k: v for k, v in data.items() if k != "content"
-                    })
+                    audit_payload = {
+                        k: v for k, v in data.items()
+                        if k not in ("content", "reasoning")
+                    }
+                    audit_payload["llm_call"] = True
+                    await audit.record(disc_id, owner_id, event_type, audit_payload, level="P2")
 
         return handler
 
@@ -255,25 +279,51 @@ class DiscussionService:
         audit = AuditRepository(self.repo.session)
         await audit.record(uuid.UUID(disc_id), uid, "discussion.delete", {
             "topic": d.topic,
-        })
+        }, level="P1")
 
     async def intervene(self, disc_id: str, user_id: str, content: str) -> None:
         """Inject user intervention into the active orchestrator."""
         orch = _active_orchestrators.get(disc_id)
         if not orch:
             raise BusinessException(ErrorCode.DISCUSSION_NOT_FOUND, "Discussion not active")
-        orch.messages.append({
-            "round": orch.current_round,
-            "speaker": f"user:{user_id}",
-            "content": content,
-        })
+
+        # Ownership check
+        disc = await self.repo.find_by_id(uuid.UUID(disc_id))
+        if not disc or str(disc.owner_id) != user_id:
+            raise BusinessException(ErrorCode.FORBIDDEN, "Cannot intervene in another user's discussion")
+
+        if orch.status != "running":
+            raise BusinessException(ErrorCode.DISCUSSION_ENDED, "Discussion has ended")
+
         # Resolve username for display
         from backend.services.user.repository import UserRepository
         user_repo = UserRepository(self.repo.session)
         user = await user_repo.find_by_id(uuid.UUID(user_id))
         username = user.username if user else user_id
 
-        # Push user_intervened SSE event
+        # Append to orchestrator context — human-readable speaker label
+        orch.messages.append({
+            "round": orch.current_round,
+            "speaker": f"观众（{username}）",
+            "content": content,
+        })
+
+        # Persist to PG (same session — committed atomically with audit)
+        await self.repo.add_message(
+            discussion_id=orch.discussion_id,
+            round_number=orch.current_round,
+            agent_id=None,
+            agent_name=username,
+            message_type="user_intervene",
+            content=content,
+        )
+        await self.audit.record(orch.discussion_id, uuid.UUID(user_id),
+                                "user_intervened", {"content": content[:200]}, level="P2")
+
+        # Signal orchestrator to restart the current round with updated context
+        orch.signal_interrupt()
+
+        # Push SSE event via Redis
         r = await _get_redis()
         payload = json.dumps({"event": "user_intervened", "data": {
             "user_id": user_id, "username": username, "content": content,

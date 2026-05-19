@@ -5,9 +5,83 @@ Events pushed: main-agent phases, sub-agent spawn/completion, tool calls, output
 """
 
 import asyncio
+import contextvars
 import logging
 import shutil
 import time
+from typing import Any
+
+# ── 全局 Token 累加器（ContextVar，支持 asyncio 并发） ──
+_acc_context: contextvars.ContextVar["TokenAccumulator | None"] = contextvars.ContextVar(
+    "token_accumulator", default=None
+)
+
+
+class TokenAccumulator:
+    """ContextVar 隔离的 token 累加器。通过 monkey-patch ChatOpenAI._agenerate/_astream 全局拦截。"""
+
+    def __init__(self) -> None:
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.llm_call_count = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def activate(self) -> None:
+        _acc_context.set(self)
+
+    def deactivate(self) -> None:
+        _acc_context.set(None)
+
+    @staticmethod
+    def current() -> "TokenAccumulator | None":
+        return _acc_context.get()
+
+
+def _patch_chatopenai() -> None:
+    """Monkey-patch ChatOpenAI._generate / _agenerate 来捕获所有 LLM token 消耗。
+    只执行一次。覆盖主 Agent 和所有子 Agent 的 ChatOpenAI 实例。
+    """
+    from langchain_openai import ChatOpenAI
+    if getattr(ChatOpenAI, "_token_patched", False):
+        return
+
+    _orig_ainvoke = ChatOpenAI.ainvoke
+    _orig_astream = ChatOpenAI.astream
+
+    async def _patched_ainvoke(self, input, config=None, *, stop=None, **kwargs):
+        result = await _orig_ainvoke(self, input, config=config, stop=stop, **kwargs)
+        acc = TokenAccumulator.current()
+        if acc is not None:
+            usage = getattr(result, "usage_metadata", None) or {}
+            inp = usage.get("input_tokens", 0) or 0
+            out = usage.get("output_tokens", 0) or 0
+            if inp or out:
+                acc.input_tokens += inp
+                acc.output_tokens += out
+                acc.llm_call_count += 1
+        return result
+
+    async def _patched_astream(self, input, config=None, *, stop=None, **kwargs):
+        last_chunk = None
+        async for chunk in _orig_astream(self, input, config=config, stop=stop, **kwargs):
+            last_chunk = chunk
+            yield chunk
+        acc = TokenAccumulator.current()
+        if acc is not None and last_chunk is not None:
+            usage = getattr(last_chunk, "usage_metadata", None) or {}
+            inp = usage.get("input_tokens", 0) or 0
+            out = usage.get("output_tokens", 0) or 0
+            if inp or out:
+                acc.input_tokens += inp
+                acc.output_tokens += out
+                acc.llm_call_count += 1
+
+    ChatOpenAI.ainvoke = _patched_ainvoke
+    ChatOpenAI.astream = _patched_astream
+    ChatOpenAI._token_patched = True
 import uuid
 from pathlib import Path
 
@@ -153,12 +227,21 @@ async def run_skill_generation(
         (skill_distill / "references" / "research").mkdir(parents=True, exist_ok=True)
 
         # 创建 deep agent（内部调用 deepagents.create_deep_agent()）
+        # 启用全局 Token 拦截：patch ChatOpenAI 的 _agenerate，捕获所有 LLM 调用
+        _patch_chatopenai()
+        token_acc = TokenAccumulator()
+        token_acc.activate()
+
+        async def _on_search_failover(msg: str) -> None:
+            await progress.push("tool", msg, {"tool": "internet_search", "failover": True})
+
         agent = create_nvwa_agent(
             model=settings.llm_model,
             api_key=settings.llm_api_key or None,
             base_url=settings.llm_api_base or None,
             enable_langsmith=False,
             root_dir=str(work_root),
+            on_search_failover=_on_search_failover,
         )
 
         prompt = (
@@ -339,6 +422,8 @@ async def run_skill_generation(
                 _announced_strategy = True
                 await _push_main("主智能体正在分析任务并制定子智能体调度策略…")
 
+        token_acc.deactivate()
+
         # ── 最终同步所有剩余文件 ──
         await _sync_new_files(force=True)
         shutil.rmtree(str(work_root), ignore_errors=True)
@@ -368,7 +453,11 @@ async def run_skill_generation(
             await bg_audit.record(None, uuid.UUID(owner_id) if owner_id else None, "skill.generate_complete", {
                 "skill_id": str(skill_id), "file_count": file_count,
                 "subagents_spawned": len(spawned),
-            })
+                "input_tokens": token_acc.input_tokens,
+                "output_tokens": token_acc.output_tokens,
+                "total_tokens": token_acc.total_tokens,
+                "llm_call_count": token_acc.llm_call_count,
+            }, level="P1")
 
         # 列出生成的文件
         file_list: list[str] = []
@@ -387,6 +476,7 @@ async def run_skill_generation(
                      str(skill_id)[:8], file_count, len(spawned))
 
     except Exception as e:
+        token_acc.deactivate()
         logger.exception("Skill generation failed: %s", str(skill_id)[:8])
         await progress.push("error", f"生成失败：{e}")
         await progress.close()
@@ -397,7 +487,11 @@ async def run_skill_generation(
             await bg_repo.set_status(skill_id, "error")
             await bg_audit.record(None, uuid.UUID(owner_id) if owner_id else None, "skill.generate_error", {
                 "skill_id": str(skill_id), "error": str(e)[:500],
-            })
+                "input_tokens": token_acc.input_tokens,
+                "output_tokens": token_acc.output_tokens,
+                "total_tokens": token_acc.total_tokens,
+                "llm_call_count": token_acc.llm_call_count,
+            }, level="P1")
     finally:
         await _cleanup_progress(str(skill_id))
 

@@ -68,6 +68,45 @@ services:
     depends_on:
       - backend
 
+  audit-backend:
+    build:
+      context: .
+      dockerfile: audit_backend/Dockerfile
+    container_name: madf-audit-backend
+    ports:
+      - "${AUDIT_PORT:-8001}:8001"
+    environment:
+      - AUDIT_DB_HOST=postgres
+      - AUDIT_DB_PORT=5432
+      - AUDIT_DB_USER=madf_audit_ro
+      - AUDIT_DB_PASSWORD=madf_audit_ro
+      - AUDIT_DB_NAME=madf
+      - AUDIT_REDIS_HOST=redis
+      - AUDIT_REDIS_PORT=6379
+      - AUDIT_JWT_SECRET=${AUDIT_JWT_SECRET:-change-me-in-production}
+      - AUDIT_JWT_EXPIRE_MINUTES=240
+      - AUDIT_DEFAULT_ADMIN_USERNAME=${AUDIT_ADMIN_USERNAME:-admin}
+      - AUDIT_DEFAULT_ADMIN_PASSWORD=${AUDIT_ADMIN_PASSWORD:-audit123}
+      - AUDIT_ALLOWED_IPS=${AUDIT_ALLOWED_IPS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - audit_archives:/var/audit/archives
+
+  audit-frontend:
+    build:
+      context: ./audit-frontend
+      dockerfile: Dockerfile
+    container_name: madf-audit-frontend
+    ports:
+      - "${AUDIT_FRONTEND_PORT:-81}:80"
+    depends_on:
+      - audit-backend
+
 volumes:
   pg_data:
   skills_data:
+  audit_archives:

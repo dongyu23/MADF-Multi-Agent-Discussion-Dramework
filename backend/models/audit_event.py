@@ -18,6 +18,7 @@ class AuditEvent(BaseMixin, Base):
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    level: Mapped[str] = mapped_column(String(4), nullable=False, default="P2")
 
     __table_args__ = (
         Index("idx_ae_discussion_created", "discussion_id", "created_at"),

@@ -89,6 +89,7 @@ async def _agent_think_fast(system_prompt: str, agent_id: str, agent_name: str,
     ]
     result = await llm.ainvoke(messages)
     raw = result.content
+
     parsed = _extract_decision(raw)
     if parsed is None:
         logger.warning("Agent %s fast-think JSON parse failed. Raw (first 500): %s",
@@ -240,7 +241,9 @@ async def _agent_think(agent, agent_id: str, agent_name: str, context: str, conf
         {"messages": [{"role": "user", "content": context}]},
         config,
     )
-    raw = result["messages"][-1].content
+    last_msg = result["messages"][-1]
+    raw = last_msg.content
+
     parsed = _extract_decision(raw)
     if parsed is None:
         logger.warning("Agent %s JSON parse failed. Raw output (first 500 chars): %s",
@@ -267,6 +270,51 @@ async def _agent_think(agent, agent_id: str, agent_name: str, context: str, conf
         reasoning=str(parsed.get("reasoning", "")),
         raw_output=raw,
     )
+
+
+async def _stream_with_timeout(agen, timeout: float):
+    """Consume async generator, yielding chunks as they arrive.
+
+    Runs the generator in a background task and communicates via an asyncio.Queue.
+    This decouples the generator's execution from our consumption, so per-chunk
+    timeouts never interfere with (cancel/kill) the underlying async generator.
+    After 5 consecutive empty-queue timeouts the stream is considered stuck.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _consume() -> None:
+        try:
+            async for chunk in agen:
+                await queue.put(chunk)
+        except Exception:
+            logger.debug("Background generator consumer exited with error", exc_info=True)
+        finally:
+            await queue.put(None)  # sentinel: stream ended
+
+    task = asyncio.create_task(_consume())
+    consecutive_timeouts = 0
+    try:
+        while True:
+            try:
+                chunk = await asyncio.wait_for(queue.get(), timeout=timeout)
+            except asyncio.TimeoutError:
+                consecutive_timeouts += 1
+                logger.debug("Stream chunk timeout (%d/5), continuing", consecutive_timeouts)
+                if consecutive_timeouts >= 5:
+                    logger.warning("Stream timed out 5 consecutive times, forcing stop")
+                    break
+                continue
+            if chunk is None:
+                break
+            yield chunk
+            consecutive_timeouts = 0
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 async def _agent_speak_stream(agent, config: dict, speak_prompt: str):
@@ -320,6 +368,10 @@ class Orchestrator:
         self.status = "pending"
         self.current_round = 0
         self.messages: list[dict] = []
+        self._interrupt = asyncio.Event()
+
+    def signal_interrupt(self) -> None:
+        self._interrupt.set()
 
     async def run(self) -> list[RoundResult]:
         """Execute the full discussion: intro → rounds → summary."""
@@ -363,7 +415,7 @@ class Orchestrator:
         if self.on_event:
             batch: list[str] = []
             last_flush = time.monotonic()
-            async for token in _call_host_llm_stream(intro_prompt):
+            async for token in _stream_with_timeout(_call_host_llm_stream(intro_prompt), timeout=10):
                 intro_content += token
                 batch.append(token)
                 if time.monotonic() - last_flush >= 0.08:
@@ -385,19 +437,54 @@ class Orchestrator:
             if self.on_event:
                 await self.on_event("round_start", {"round": round_num})
 
-            # Step 1: All agents think — push each result as it arrives
+            # Step 1: All agents think — each wrapped with timeout
             context = self._build_think_context(round_num)
-            tasks = [
-                asyncio.create_task(
+            think_tasks = {
+                name: asyncio.create_task(
                     _agent_think_fast(agent_prompts[name], str(uuid.uuid4()), name, context)
                 )
                 for name in agents
-            ]
+            }
             decisions: list[AgentDecision] = []
-            for coro in asyncio.as_completed(tasks):
-                d = await coro
+            interrupted = False
+            for name, task in think_tasks.items():
+                if self._interrupt.is_set():
+                    for t in think_tasks.values():
+                        if not t.done():
+                            t.cancel()
+                    for t in think_tasks.values():
+                        try:
+                            await t
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                    self._interrupt.clear()
+                    interrupted = True
+                    break
+                is_timeout = False
+                try:
+                    d = await asyncio.wait_for(task, timeout=20)
+                except asyncio.TimeoutError:
+                    logger.warning("Agent %s think timeout (20s), falling back to wait", name)
+                    is_timeout = True
+                    d = AgentDecision(
+                        agent_id=str(uuid.uuid4()),
+                        agent_name=name,
+                        decision="wait",
+                        confidence=0.0,
+                        reasoning="思考超时，降级为等待",
+                        raw_output="",
+                    )
+                    if self.on_event:
+                        await self.on_event("agent_think", {
+                            "agent_id": d.agent_id,
+                            "agent_name": name,
+                            "round": round_num,
+                            "decision": "wait",
+                            "confidence": 0.0,
+                            "reasoning": "思考超时（20s）",
+                        })
                 decisions.append(d)
-                if self.on_event:
+                if self.on_event and not is_timeout:
                     await self.on_event("agent_think", {
                         "agent_id": d.agent_id,
                         "agent_name": d.agent_name,
@@ -406,6 +493,9 @@ class Orchestrator:
                         "confidence": d.confidence,
                         "reasoning": d.reasoning,
                     })
+
+            if interrupted:
+                continue
 
             # Step 2: Select speaker
             speakers = [d for d in decisions if d.decision == "speak"]
@@ -418,37 +508,26 @@ class Orchestrator:
                 logger.info("Round %d: all silent, forced speaker %s", round_num, chosen.agent_name)
 
             # Step 3: Speaker speaks
+            # Build history: agent messages with truncation, user messages FULL and separate
+            _agent_msgs = [m for m in self.messages if not m['speaker'].startswith('观众')]
+            _user_msgs = [m for m in self.messages if m['speaker'].startswith('观众')]
+            _history_text = _format_history(_agent_msgs[-50:])
+            _user_text = ""
+            if _user_msgs:
+                _user_text = "观众发言:\n"
+                for m in _user_msgs[-10:]:
+                    _user_text += f"  观众说：{m['content']}\n"
+                _user_text += "\n"
             speak_prompt = (
-                f"轮到你了。现在是发言模式——不是思考模式。\n\n"
+                f"轮到你了。你不是在思考——你是在说话。\n\n"
                 f"讨论主题：{self.topic}  第{round_num}轮\n\n"
-                f"## 切题锚点（每次发言前后自检）\n"
-                f"你说的每一段话都必须能直接回答：这和讨论主题有什么关系？\n"
-                f"如果你的故事需要绕三个弯才能联系到主题——删掉它，直接说主题。\n\n"
-                f"## 观众价值（发言结束前自检）\n"
-                f"你说话的时候，后面坐着几十个年轻人。他们不是来听传奇的——\n"
-                f"他们是来做选择的。你的每一段话结束时问自己：\n"
-                f"「一个20岁的人能从这里带走什么？」如果答案模糊，加一句总结。\n\n"
-                f"## 介绍自己（仅第一次发言）\n"
-                f"如果这是你本场第一次开口——用一两句话简单介绍你是谁、做什么的，\n"
-                f"让观众知道你凭什么坐在这里。但不要罗列成就——说你是做什么的、为什么关心这个话题。\n\n"
-                f"## 回应对话\n"
-                f"你不是在独白。先快速回应前面的讨论——别人说了什么让你想接话？\n"
-                f"是补充、是纠正、还是换个角度？让观众看到对话的脉络。\n\n"
-                f"刚才说过的：\n{_format_history(self.messages[-50:])}\n\n"
-                f"## 发言要求（按重要性排序）\n\n"
-                f"0. 不重复。如果你发现自己又在讲之前说过的故事或案例——立刻停下来。\n"
-                f"   每个经历故事在一场讨论中最多只能讲一次。用一句话总结旧故事，\n"
-                f"   然后马上转到新角度。如果找不到新角度——缩短发言，让给别人。\n"
-                f"1. 切题。如果发现自己在说和主题无关的故事——立刻停下来，拉回主题。\n"
-                f"1. 事实边界。你唯一的事实来源是你的技能文件。\n"
-                f"   输出任何数字前, 必须在技能文件中找到确切出处。没有出处 -- 不准说。\n"
-                f"   技能文件说「惊人」-- 你就说「惊人」, 不要自己翻译成「1000倍」。\n"
-                f"2. 术语即解释。每提到一个专业概念, 立刻用一两句大白话解释。\n"
-                f"   标准: 一个高中生能听懂。\n"
-                f"3. 写完整段落。不要用短句分行来模拟语气 -- 信息会碎掉。\n"
-                f"4. 陈述, 不反问。分享困境, 不是分享传奇。观众不需要知道你多成功 --\n"
-                f"   他们想知道你犯过什么错、怎么想的、学到了什么。\n\n"
-                f"绝对不要输出JSON。绝对不要输出括号动作提示。"
+                f"如果观众在对你说话——先回应他们。让他们感觉到你听到了。\n"
+                f"接住前面的讨论——别人说了什么让你想接话？\n"
+                f"如果你第一次开口——用一两句介绍自己。\n"
+                f"说话的时候想着后面坐着的年轻人。每段说完问自己：一个20岁的人能从这里带走什么？\n"
+                f"不要重复自己讲过的故事。\n\n"
+                f"刚才说过的：\n{_history_text}\n{_user_text}"
+                f"你现在是在发言。写完整的自然段落。绝对禁止输出JSON、禁止输出代码块、禁止输出任何不是自然语言的东西。\n"
             )
             # Stream speak tokens — typewriter effect via on_event callbacks
             full_speech = ""
@@ -460,7 +539,9 @@ class Orchestrator:
                 })
             batch = []
             last_flush = time.monotonic()
-            async for chunk in _agent_speak_stream(agents[chosen.agent_name], agent_configs[chosen.agent_name], speak_prompt):
+            async for chunk in _stream_with_timeout(
+                _agent_speak_stream(agents[chosen.agent_name], agent_configs[chosen.agent_name], speak_prompt),
+                timeout=10):
                 full_speech += chunk
                 batch.append(chunk)
                 if time.monotonic() - last_flush >= 0.08:
@@ -503,6 +584,10 @@ class Orchestrator:
                 was_forced=was_forced,
             ))
 
+            if self._interrupt.is_set():
+                self._interrupt.clear()
+                continue
+
         # ── Host summary: LLM summarizes the full discussion ──
         if self.on_event:
             await self.on_event("host_summary_start", {"total_rounds": self.current_round})
@@ -514,7 +599,7 @@ class Orchestrator:
             f"讨论内容：\n"
         )
         for m in self.messages[-50:]:
-            summary_prompt += f"  [{m['speaker']}]: {m['content'][:250]}\n"
+            summary_prompt += f"  [{m['speaker']}]: {m['content']}\n"
         summary_prompt += (
             "\n收尾要求：\n"
             f"- 这是讨论的总结，必须是总结。简洁，{2 + len(agents)} 段左右。\n"
@@ -529,7 +614,7 @@ class Orchestrator:
         if self.on_event:
             batch = []
             last_flush = time.monotonic()
-            async for token in _call_host_llm_stream(summary_prompt):
+            async for token in _stream_with_timeout(_call_host_llm_stream(summary_prompt), timeout=10):
                 summary_content += token
                 batch.append(token)
                 if time.monotonic() - last_flush >= 0.08:
@@ -557,26 +642,22 @@ class Orchestrator:
             f"讨论主题: {self.topic}\n"
             f"当前为第 {round_num} 轮。\n"
         )
-        if self.messages:
-            ctx += "已进行的发言:\n" + _format_history(self.messages[-50:], max_len=300)
+        agent_msgs = [m for m in self.messages if not m['speaker'].startswith('观众')]
+        user_msgs = [m for m in self.messages if m['speaker'].startswith('观众')]
+        if agent_msgs:
+            ctx += "已进行的发言:\n" + _format_history(agent_msgs[-50:], max_len=500)
+            ctx += "\n"
+        if user_msgs:
+            ctx += "以下是观众刚才的发言:\n"
+            for m in user_msgs[-10:]:
+                ctx += f"  观众说：{m['content']}\n"
             ctx += "\n"
         ctx += (
-            "轮到你决定是否发言。\n\n"
-            "## 切题检查（每次思考必做）\n"
-            f"本场讨论的唯一主题：{self.topic}\n"
-            "你要说的话必须直接回答这个问题。检查方法：\n"
-            "如果你的故事去掉三句话就没法联系到主题——那不是切题，是跑题。不要强行类比。\n\n"
-            "## 重复检查\n"
-            "前面有人说过你想说的观点了吗？如果只是换个说法说同一件事——不要发言。\n"
-            "如果你已经在本场发过两次以上的言——只有当你手上有全新的、前面没出现过的角度时，才考虑发言。\n\n"
-            "## 判断标准\n"
-            "不是你有没有想说的话——你永远有想说的话。\n"
-            "是你能不能给讨论带来之前没有的东西？\n\n"
-            "## 置信度\n"
-            "恰好两位小数，均匀分布在0.00到1.00之间。\n"
-            "脑中想一个0到100之间的随机整数，除以100。\n"
-            "禁止用0.30、0.50、0.70、0.80这类整齐数字。\n"
-            "刚发过言时confidence偏低（但仍是随机小数）。\n\n"
+            "这是圆桌论坛。后面有观众，周围有其他嘉宾。\n"
+            "如果有人叫了你的名字——别让别人替你回答。\n"
+            "如果你已经回应过了——把话递给还没说的人。\n"
+            "如果别人在等你说话——别让他们等太久。\n\n"
+            "请决定是否发言。\n"
             "必须严格输出JSON，不要输出其他任何文字。格式：\n"
             '{"decision":"speak"|"wait","confidence":0.76,"reasoning":"碎片化临场念头"}\n'
         )

@@ -881,6 +881,90 @@ host_intro, host_intro_start, round_start, agent_think, agent_speak_chunk, host_
 
 ---
 
+
+## 十二-A、管理后台（企业级运维控制台）
+
+### 架构拓扑
+
+管理后台是旁路半独立架构，通过审计后端代理主系统 API：
+
+```
+管理员浏览器 (81端口) → audit-frontend (React)
+    ↓ 管理 API 请求
+审计后端 (8001端口, FastAPI)
+    ↓ 签发服务 JWT (ADMIN_JWT_SECRET, 5min, jti 防重放)
+    ↓ httpx 转发
+主系统 (8000端口, FastAPI)
+    ↓ backend/middleware/admin_auth.py 验证服务 JWT
+    ↓ 执行管理操作 + 记审计事件
+```
+
+### 核心组件
+
+| 组件 | 路径 | 职责 |
+|------|------|------|
+| 管理前端 | `audit-frontend/` | 7 页管理后台（浅色主题，与主系统一致） |
+| 审计后端 | `audit_backend/` | 审计查询 + 管理员认证 + 代理网关 |
+| 管理 API | `backend/services/admin/` | 38 个管理接口，服务 JWT 鉴权 |
+| 服务间认证 | `backend/middleware/admin_auth.py` | 验证服务 JWT + jti 防重放 |
+| 代理网关 | `audit_backend/services/admin_proxy/` | 签发 JWT + httpx 转发 |
+| 数据库 | `audit_events` 表 + `audit_admin_users` 等 5 张审计表 | 独立 level 列（P0/P1/P2）|
+
+### 功能页面
+
+| 页面 | 路由 | 关键数据 |
+|------|------|---------|
+| 仪表盘 | `/` | 统计卡片、健康灯、token 趋势、最近 P0 异常 |
+| 用户管理 | `/users` | 列表/详情/禁用/改密码/改用户名 |
+| 讨论监控 | `/discussions` | SSE 旁听、消息历史、删除 |
+| 审计与追溯 | `/audit` | 时间线视图、筛选、Payload 展开 |
+| 系统健康 | `/health` | 组件状态、异常详情、系统负载 |
+| 管理员 | `/admins` | 审计员 CRUD |
+| 设置 | `/settings` | 端口配置+重启、告警阈值、保留策略 |
+
+### 管理 API 清单（38 个，`/api/v1/admin/*`）
+
+- 用户管理 6：GET/PUT users, status, username, password, token-usage
+- 讨论监控 6：GET discussions, detail, messages, DELETE
+- 角色管理 4：GET characters, visibility, DELETE
+- 画廊管理 2：GET gallery, DELETE unlist
+- 审计与追溯 4：GET events, detail, operations
+- 系统健康 5：health overview, errors, load, orphan-discussions
+- 统计总览 3：stats overview, tokens, trend
+- 管理员管理 4：CRUD admins
+- 设置 4：GET/PUT settings, restart, retention
+
+### 审计事件 level 系统
+
+level 是 `audit_events` 表的独立列（迁移 `7883e7a9b2c1` 添加）。
+`AuditRepository.record()` 增加 `level` 参数（默认 P2），新事件必须显式传入。
+
+| 新增事件 | level |
+|---------|------|
+| system.error | P0 |
+| system.db_pool_error | P0 |
+| system.redis_pubsub_error | P1 |
+| user.status_changed | P0 |
+| user.username_changed | P0 |
+| user.password_reset | P0 |
+| discussion.deleted_by_admin | P1 |
+| skill.visibility_changed | P1 |
+| character.deleted_by_admin | P1 |
+| gallery.unlisted | P1 |
+
+### 健康检查
+
+`GET /api/v1/health` — 存活检查（保持轻量，Docker healthcheck 用）
+`GET /api/v1/health/detailed` — 深度检查（DB SELECT 1 + Redis PING + LLM API 可达性）
+
+### Agent 超时保护
+
+`agent_engine/discussion/orchestrator.py` 三个 LLM 调用点全部加超时：
+- `_agent_think_fast`: 15s 超时 → 降级为 wait
+- `_agent_speak_stream`: 10s 无 token → 跳过本轮发言
+- `_call_host_llm_stream`: 10s 无 token → 降级为短摘要
+
+
 ## 十三、AI 行为指令
 
 ### 写代码时
@@ -970,6 +1054,39 @@ test_should_[期望结果]_when_[条件]
 4. SQL 查询全部依赖 ORM 自动生成，未手写 SQL——排序方向正确性需集成测试验证
 
 ---
+
+### 测试方法论（2026-05-18 审计系统教训）
+
+#### 核心原则：不要测试 API，要测试业务
+
+HTTP 200 不等于功能正确。必须模拟真实管理员的完整工作流，验证每一步的连锁反应。
+
+#### 六大禁止
+
+| 禁止 | 原因 |
+|------|------|
+| ❌ 只检查 HTTP 状态码 | 状态码不验证响应内容的正确性，字段映射错误全部漏检 |
+| ❌ 使用合成测试数据（admin_id="qa"/"test"） | 合成的 admin_id 永远不会出现在生产审计日志中，无法验证身份穿透 |
+| ❌ "三方验证"用同一套模板 | 共享同一系统性偏差的三个 Agent，不是真正的独立验证 |
+| ❌ 只测单一 API 不测连锁反应 | 必须 API 响应 + DB 状态 + 审计事件 + UI 显示 四层交叉验证 |
+| ❌ 修完 Bug 不跑全量回归 | 只跑修过的那条，不知道是否引入新错误 |
+| ❌ 前端测试只搜关键词 | 必须验证按钮可点击、日期非 Invalid Date、数字格式正确、状态颜色正确 |
+
+#### 正确的测试流程：模拟管理员一日工作
+
+测试代码按管理员真实业务流程组织，每一步产生可验证的断言，前一步的产出（user_id、discussion_id）作为后一步的输入：
+
+1. **登录看大屏**：真实账号登录 → 健康组件状态全部"正常" → 统计卡片数字>0 → 日期非 Invalid Date
+2. **禁用用户闭环**：查用户列表 → 禁用 → API返回 status=disabled → 直查DB确认 deleted_at 非空 → 审计事件含真实 admin_id
+3. **全链路回放**：注册 → 创建讨论 → 等待结束 → 审计事件完整链（create→speak→end）→ 讨论 token 用量 >0
+4. **跨层交叉验证**：每个业务操作验证四层：API 响应 → 数据库变更 → 审计事件记录 → 前端 UI 展示
+
+#### 回归套件
+
+任何 Bug 修复后必须运行全部已有测试。不通过 = 不发布。
+新增功能必须同时新增测试。
+测试文件位置：`tests/`，命名格式 `test_should_[期望]_when_[条件]`。
+
 
 ## 十七、操作清单
 
