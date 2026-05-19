@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import UUID, CheckConstraint, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.models.base import Base, BaseMixin, utcnow
+from backend.models.base import Base, BaseMixin
 
 
 class Discussion(BaseMixin, Base):

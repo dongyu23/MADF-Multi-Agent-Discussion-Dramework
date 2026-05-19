@@ -8,7 +8,6 @@ from backend.services.character.schemas import (
     CharacterResponse,
     CharacterUpdateRequest,
     FileContentRequest,
-    FileListResponse,
     GalleryQuery,
     GenerateRequest,
     RecommendationResponse,

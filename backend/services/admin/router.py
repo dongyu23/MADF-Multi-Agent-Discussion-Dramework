@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,16 +11,13 @@ from backend.services.admin.schemas import (
     AuditEventItem,
     AuditEventListResponse,
     CharacterAdminDetail,
-    CharacterAdminItem,
     CharacterAdminListResponse,
     CreateAdminRequest,
     CreateUserRequest,
     DiscussionAdminDetail,
-    DiscussionAdminItem,
     DiscussionAdminListResponse,
     DiscussionMessageInfo,
     DiscussionTokenUsageResponse,
-    GalleryAdminItem,
     GalleryAdminListResponse,
     HealthErrorItem,
     HealthErrorListResponse,
@@ -41,10 +37,9 @@ from backend.services.admin.schemas import (
     UpdatePhoneRequest,
     UpdateRetentionRequest,
     UpdateSettingsRequest,
-    UpdateUserStatusRequest,
     UpdateUsernameRequest,
+    UpdateUserStatusRequest,
     UserAdminDetail,
-    UserAdminItem,
     UserAdminListResponse,
 )
 from backend.services.admin.service import AdminService

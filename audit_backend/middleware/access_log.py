@@ -15,8 +15,9 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         admin_id = None
         token = request.headers.get("Authorization", "")
         if token.startswith("Bearer "):
-            from audit_backend.config import settings
             from jose import jwt
+
+            from audit_backend.config import settings
 
             try:
                 payload = jwt.decode(

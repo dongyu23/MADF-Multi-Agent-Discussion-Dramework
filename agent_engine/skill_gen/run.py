@@ -8,10 +8,10 @@ Nvwa Agent 启动脚本
 """
 
 import sys
-import os
 from pathlib import Path
-from dotenv import load_dotenv
+
 from agent import create_nvwa_agent
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / ".env"

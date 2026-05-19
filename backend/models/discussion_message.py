@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import UUID, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import UUID, CheckConstraint, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import Base, BaseMixin

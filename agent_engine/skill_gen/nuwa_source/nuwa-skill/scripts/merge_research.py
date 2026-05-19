@@ -13,8 +13,8 @@
 输出: 打印markdown格式的摘要表格到stdout
 """
 
-import sys
 import re
+import sys
 from pathlib import Path
 
 AGENTS = {

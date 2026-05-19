@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from backend.core.responses import Result
 from backend.deps import require_user
-from backend.services.user.schemas import UserLoginRequest, UserRegisterRequest, UserResponse, TokenResponse
+from backend.services.user.schemas import UserLoginRequest, UserRegisterRequest, UserResponse
 from backend.services.user.service import UserService, get_user_service
 
 router = APIRouter(prefix="/api/v1/auth", tags=["user"])

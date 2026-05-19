@@ -30,7 +30,6 @@ async_session_factory = async_sessionmaker(
 def _handle_db_error(context):
     """DB 连接池异常监听——连接失败/池溢出时记录审计事件。"""
     try:
-        from backend.services.audit.repository import AuditRepository
         import asyncio
         loop = asyncio.get_event_loop()
         loop.create_task(_record_db_error(context))

@@ -567,13 +567,11 @@ class AdminService:
 
     async def get_health_overview(self) -> dict:
         import asyncio
-        import sys
 
         import httpx
         from sqlalchemy import text
 
         from backend.config import settings
-        from backend.deps import async_engine
 
         result = {
             "app": settings.app_name,
@@ -676,7 +674,6 @@ class AdminService:
             thread_count = psutil.Process().num_threads()
         except ImportError:
             try:
-                import os as _os
                 import resource
                 usage = resource.getrusage(resource.RUSAGE_SELF)
                 cpu_percent = 0.0
@@ -744,6 +741,7 @@ class AdminService:
 
         # Online users: active in last 5 minutes (approximated via updated_at on User)
         from sqlalchemy import func, select
+
         from backend.models.user import User
         since = datetime.now(timezone.utc) - timedelta(minutes=5)
         stmt = select(func.count()).where(

@@ -71,8 +71,9 @@ async def health_detailed() -> Result[dict]:
     # Redis
     t0 = time.monotonic()
     try:
-        import redis.asyncio as aioredis
         import os
+
+        import redis.asyncio as aioredis
         r = aioredis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", "6379")),

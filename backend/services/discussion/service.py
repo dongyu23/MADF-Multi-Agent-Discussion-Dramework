@@ -11,7 +11,6 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_engine.discussion.orchestrator import Orchestrator
-
 from backend.config import settings
 from backend.core.exceptions import BusinessException, ErrorCode
 from backend.deps import get_db
@@ -48,7 +47,9 @@ class DiscussionService:
 
     async def generate_topic(self) -> str:
         import os
+
         from langchain_openai import ChatOpenAI
+
         from backend.config import settings
 
         api_key = settings.llm_api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -123,7 +124,7 @@ class DiscussionService:
 
     async def _run_orchestrator(self, disc_id: uuid.UUID, orch: Orchestrator) -> None:
         """Background task: runs orchestrator with its own independent DB session."""
-        from backend.services.character.generation_service import _patch_chatopenai, TokenAccumulator
+        from backend.services.character.generation_service import TokenAccumulator, _patch_chatopenai
         _patch_chatopenai()
         token_acc = TokenAccumulator()
         token_acc.activate()
@@ -178,7 +179,7 @@ class DiscussionService:
             await r.publish(channel, payload)
 
             # 2. Persist to PG with independent background session
-            from backend.deps import async_session_factory  # noqa: PLC0415
+            from backend.deps import async_session_factory
             async with async_session_factory() as bg_session:
                 repo = DiscussionRepository(bg_session)
 

@@ -3,9 +3,6 @@ import os
 import shutil
 from pathlib import Path
 
-from backend.config import settings
-
-
 SKILLS_ROOT = Path(os.getenv("SKILLS_ROOT", str(Path(__file__).parent.parent.parent.parent / "skills")))
 
 

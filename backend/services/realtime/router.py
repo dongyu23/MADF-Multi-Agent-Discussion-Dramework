@@ -27,6 +27,7 @@ async def discussion_stream(
         # ── Catch-up phase: push missed messages from PG ──
         if after:
             from uuid import UUID
+
             from backend.deps import async_session_factory
             from backend.services.discussion.repository import DiscussionRepository
 
@@ -53,7 +54,7 @@ async def discussion_stream(
                     yield f"event: catchup_msg\ndata: {data}\n\n"
 
                 if count > 0:
-                    yield f"event: catchup_end\ndata: {{}}\n\n"
+                    yield "event: catchup_end\ndata: {}\n\n"
 
         # ── Live phase: subscribe to Redis ──
         r = redis.from_url(settings.redis_url, decode_responses=True)

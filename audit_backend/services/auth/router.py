@@ -5,7 +5,7 @@ from audit_backend.core.responses import Result
 from audit_backend.deps import get_audit_db
 from audit_backend.middleware.auth import get_current_admin
 from audit_backend.models.audit_admin_user import AuditAdminUser
-from audit_backend.services.auth.schemas import AdminUserResponse, LoginRequest, TokenResponse
+from audit_backend.services.auth.schemas import LoginRequest
 from audit_backend.services.auth.service import AuthService
 
 router = APIRouter(prefix="/api/v1/audit/auth", tags=["audit-auth"])

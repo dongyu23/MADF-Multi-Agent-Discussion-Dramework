@@ -1,5 +1,8 @@
 """服务间 JWT 签发 — 审计后端调主系统 /api/v1/admin/* 时签发短时效服务 JWT。"""
-import os, time, uuid
+import os
+import time
+import uuid
+
 from jose import jwt
 
 ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "change-me-in-production")

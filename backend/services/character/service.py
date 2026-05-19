@@ -24,7 +24,6 @@ from backend.services.character.schemas import (
     RecommendationResponse,
 )
 
-
 SKILLS_ROOT = Path(__file__).parent.parent.parent.parent / "skills"
 
 # ── Curated recommendation pool ─────────────────────────

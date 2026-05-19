@@ -9,7 +9,6 @@ import contextvars
 import logging
 import shutil
 import time
-from typing import Any
 
 # ── 全局 Token 累加器（ContextVar，支持 asyncio 并发） ──
 _acc_context: contextvars.ContextVar["TokenAccumulator | None"] = contextvars.ContextVar(
@@ -86,7 +85,6 @@ import uuid
 from pathlib import Path
 
 from agent_engine.skill_gen.agent import create_nvwa_agent
-
 from backend.config import settings
 from backend.deps import async_session_factory
 from backend.services.audit.repository import AuditRepository

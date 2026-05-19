@@ -16,8 +16,9 @@ _redis = None
 async def _get_redis() -> "aioredis.Redis":
     global _redis
     if _redis is None:
-        import redis.asyncio as aioredis
         import os
+
+        import redis.asyncio as aioredis
         host = os.getenv("REDIS_HOST", "localhost")
         port = int(os.getenv("REDIS_PORT", "6379"))
         _redis = aioredis.Redis(host=host, port=port, decode_responses=True)
