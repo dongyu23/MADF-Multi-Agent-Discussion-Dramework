@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 _redis = None
 
 
-async def _get_redis():
+async def _get_redis() -> "aioredis.Redis":
     global _redis
     if _redis is None:
         import redis.asyncio as aioredis

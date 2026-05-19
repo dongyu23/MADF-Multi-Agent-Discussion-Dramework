@@ -1,4 +1,4 @@
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel
 
@@ -17,7 +17,7 @@ class Result(BaseModel, Generic[T]):
         return cls(code=200, message=message, data=data)
 
     @classmethod
-    def fail(cls, code: int, message: str) -> "Result[None]":
+    def fail(cls, code: int, message: str) -> "Result[Any]":
         return cls(code=code, message=message, data=None)
 
 

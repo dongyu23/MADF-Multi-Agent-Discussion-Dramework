@@ -30,7 +30,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install mypy fastapi uvicorn sqlalchemy asyncpg alembic pydantic pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" redis httpx aiofiles python-dotenv
+      - run: pip install -e ".[dev]"
+      - run: pip install git+https://github.com/langchain-ai/deepagents.git#subdirectory=libs/deepagents langchain-openai tavily-python
       - run: mypy backend/
 
   lint-frontend:
@@ -98,7 +99,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: pip install git+https://github.com/langchain-ai/deepagents.git#subdirectory=libs/deepagents
+      - run: pip install git+https://github.com/langchain-ai/deepagents.git#subdirectory=libs/deepagents langchain-openai tavily-python
       - run: alembic upgrade head
       - run: pytest tests/ -v --tb=short --timeout=60
 

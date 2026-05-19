@@ -12,7 +12,7 @@ vi.mock('axios', () => ({
       post: vi.fn(),
       put: vi.fn(),
       delete: vi.fn(),
-      defaults: { baseURL: '/api/v1' },
+      defaults: { baseURL: '/api/v1', headers: { common: {}, 'Content-Type': 'application/json' } },
     })),
   },
 }));

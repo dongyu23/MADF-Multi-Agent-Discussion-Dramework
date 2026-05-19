@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -97,7 +98,7 @@ class CharacterRepository:
         has_more = len(skills) > page_size
         return skills[:page_size], has_more
 
-    async def update(self, skill: Skill, **kwargs) -> Skill:
+    async def update(self, skill: Skill, **kwargs: Any) -> Skill:
         for key, value in kwargs.items():
             if value is not None and hasattr(skill, key):
                 setattr(skill, key, value)
