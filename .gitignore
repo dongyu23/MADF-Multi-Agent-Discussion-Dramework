@@ -64,3 +64,14 @@ Desktop.ini
 *.temp
 *.bak
 *.orig
+
+# ── Build artifacts ──
+*.tsbuildinfo
+large_tool_results/
+
+# ── Planning documents ──
+audit-system-plan.md
+engineering-plan.md
+
+# ── One-off scripts ──
+test_audit_frontend.py

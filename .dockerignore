@@ -1,0 +1,67 @@
+# ── Secrets ──
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# ── Python ──
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+coverage/
+htmlcov/
+
+# ── Node / Frontend (build happens in Dockerfile) ──
+frontend/node_modules/
+audit-frontend/node_modules/
+
+# ── Git ──
+.git/
+.gitignore
+.gitattributes
+
+# ── CI ──
+.github/
+
+# ── Docker ──
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# ── Documents ──
+*.md
+nuwa-source/
+
+# ── Tests ──
+tests/
+test_audit_frontend.py
+
+# ── Runtime data (volume-mounted) ──
+skills/
+pg_data/
+logs/
+init.sql
+
+# ── Scripts ──
+start.sh
+stop.sh
+
+# ── IDE / OS ──
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# ── Legacy ──
+backend/Dockerfile
+frontend/Dockerfile
+audit-frontend/Dockerfile
+audit_backend/Dockerfile
+**/large_tool_results/
