@@ -1,0 +1,142 @@
+{
+  "BL": {
+    "label": "单智能体基线",
+    "n": 3,
+    "overall_mean": 6.47,
+    "overall_std": 0.41,
+    "dim_means": {
+      "coherence": 6.67,
+      "depth": 7.0,
+      "consistency": 7.67,
+      "engagement": 2.0,
+      "relevance": 9.0
+    },
+    "dim_stds": {
+      "coherence": 1.25,
+      "depth": 0.0,
+      "consistency": 0.94,
+      "engagement": 0.82,
+      "relevance": 0.0
+    }
+  },
+  "A": {
+    "label": "完整MADF系统",
+    "n": 6,
+    "overall_mean": 6.8,
+    "overall_std": 1.08,
+    "dim_means": {
+      "coherence": 6.5,
+      "depth": 6.67,
+      "consistency": 7.67,
+      "engagement": 5.83,
+      "relevance": 7.33
+    },
+    "dim_stds": {
+      "coherence": 1.26,
+      "depth": 1.25,
+      "consistency": 1.6,
+      "engagement": 1.21,
+      "relevance": 1.49
+    }
+  },
+  "B": {
+    "label": "无确信度仲裁",
+    "n": 5,
+    "overall_mean": 6.08,
+    "overall_std": 0.59,
+    "dim_means": {
+      "coherence": 5.2,
+      "depth": 6.2,
+      "consistency": 7.0,
+      "engagement": 5.2,
+      "relevance": 6.8
+    },
+    "dim_stds": {
+      "coherence": 0.4,
+      "depth": 0.75,
+      "consistency": 1.41,
+      "engagement": 0.4,
+      "relevance": 1.83
+    }
+  },
+  "C": {
+    "label": "无Jitter",
+    "n": 5,
+    "overall_mean": 6.04,
+    "overall_std": 0.86,
+    "dim_means": {
+      "coherence": 6.0,
+      "depth": 6.0,
+      "consistency": 6.2,
+      "engagement": 5.6,
+      "relevance": 6.4
+    },
+    "dim_stds": {
+      "coherence": 0.89,
+      "depth": 0.89,
+      "consistency": 0.98,
+      "engagement": 1.2,
+      "relevance": 0.8
+    }
+  },
+  "D": {
+    "label": "无主持人开场",
+    "n": 5,
+    "overall_mean": 6.68,
+    "overall_std": 0.68,
+    "dim_means": {
+      "coherence": 6.2,
+      "depth": 6.4,
+      "consistency": 7.4,
+      "engagement": 6.0,
+      "relevance": 7.4
+    },
+    "dim_stds": {
+      "coherence": 0.75,
+      "depth": 0.8,
+      "consistency": 1.62,
+      "engagement": 0.89,
+      "relevance": 1.02
+    }
+  },
+  "E": {
+    "label": "无主持人总结",
+    "n": 3,
+    "overall_mean": 6.6,
+    "overall_std": 0.33,
+    "dim_means": {
+      "coherence": 5.0,
+      "depth": 6.0,
+      "consistency": 8.0,
+      "engagement": 5.0,
+      "relevance": 9.0
+    },
+    "dim_stds": {
+      "coherence": 0.82,
+      "depth": 0.0,
+      "consistency": 1.41,
+      "engagement": 0.0,
+      "relevance": 0.0
+    }
+  },
+  "F": {
+    "label": "无铁律约束",
+    "n": 3,
+    "overall_mean": 5.93,
+    "overall_std": 0.9,
+    "dim_means": {
+      "coherence": 5.67,
+      "depth": 5.33,
+      "consistency": 6.0,
+      "engagement": 6.0,
+      "relevance": 6.67
+    },
+    "dim_stds": {
+      "coherence": 0.94,
+      "depth": 1.7,
+      "consistency": 0.82,
+      "engagement": 0.82,
+      "relevance": 1.25
+    }
+  }
+}
