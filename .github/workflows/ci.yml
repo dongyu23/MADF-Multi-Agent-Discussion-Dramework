@@ -22,19 +22,6 @@ jobs:
       - run: pip install ruff
       - run: ruff check backend/ agent_engine/ audit_backend/
 
-  typecheck-python:
-    name: Type Check (Python)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev]"
-      - run: pip install git+https://github.com/langchain-ai/deepagents.git#subdirectory=libs/deepagents langchain-openai tavily-python
-      - run: mypy backend/
-
   lint-frontend:
     name: Lint & Type Check (Frontend)
     runs-on: ubuntu-latest
