@@ -440,6 +440,7 @@ async def get_health_error(
         event_type=data["event_type"],
         level=data["level"],
         message=data["payload"].get("exception_message", data["event_type"]),
+        payload=data.get("payload"),
         created_at=data["created_at"],
     ))
 
@@ -514,7 +515,7 @@ async def create_admin(
     svc: AdminService = Depends(_get_svc),
     admin: dict = Depends(verify_admin_service),
 ) -> Result[AdminUserItem]:
-    data = await svc.create_admin(req.username, req.password, req.role, admin)
+    data = await svc.create_admin(req.username, req.password, req.display_name, req.role, admin)
     return Result.ok(AdminUserItem(**data))
 
 
@@ -526,7 +527,7 @@ async def update_admin(
     admin: dict = Depends(verify_admin_service),
 ) -> Result[AdminUserItem]:
     data = await svc.update_admin(
-        admin_id, req.username, req.password, req.role, admin,
+        admin_id, req.username, req.password, req.display_name, req.role, req.is_active, admin,
     )
     if data is None:
         return Result.fail(2003, "Admin not found")

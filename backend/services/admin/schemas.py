@@ -228,6 +228,7 @@ class HealthErrorItem(BaseModel):
     event_type: str
     level: str
     message: str
+    payload: dict | None = None
     created_at: str
 
 
@@ -296,20 +297,26 @@ class TokenTrendPoint(BaseModel):
 class AdminUserItem(BaseModel):
     id: str
     username: str
+    display_name: str | None = None
     role: str  # super_admin | admin | auditor
+    is_active: bool = True
+    last_login: str | None = None
     created_at: str
 
 
 class CreateAdminRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=64)
     password: str = Field(..., min_length=6, max_length=128)
+    display_name: str | None = None
     role: str = Field(default="admin", pattern="^(super_admin|admin|auditor)$")
 
 
 class UpdateAdminRequest(BaseModel):
     username: str | None = Field(default=None, min_length=2, max_length=64)
     password: str | None = Field(default=None, min_length=6, max_length=128)
+    display_name: str | None = None
     role: str | None = Field(default=None, pattern="^(super_admin|admin|auditor)$")
+    is_active: bool | None = None
 
 
 # ═══════════════════════════════════════════

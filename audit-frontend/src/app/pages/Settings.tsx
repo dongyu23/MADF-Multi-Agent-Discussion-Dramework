@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { Loader2, Save, RotateCw, AlertTriangle } from "lucide-react";
+import { Loader2, Save, RotateCw, AlertTriangle, Server, Database } from "lucide-react";
 import { toast } from "sonner";
 import { getSettings, updateSettings, restartService, updateRetention } from "../api/admin";
 
@@ -14,15 +14,15 @@ export function Settings() {
     queryFn: getSettings,
   });
 
-  const saveSettings = useMutation({
+  const saveMutation = useMutation({
     mutationFn: (data: Record<string, any>) => updateSettings(data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-settings"] }); toast.success("设置已保存"); },
     onError: (err: any) => toast.error(err?.response?.data?.message || "保存失败"),
   });
 
-  const saveRetention = useMutation({
+  const retentionMutation = useMutation({
     mutationFn: (data: Record<string, any>) => updateRetention(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-settings"] }); toast.success("保留策略已保存"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-settings"] }); toast.success("保留策略已更新"); },
     onError: (err: any) => toast.error(err?.response?.data?.message || "保存失败"),
   });
 
@@ -40,23 +40,20 @@ export function Settings() {
         <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-indigo-400" size={28} /></div>
       ) : (
         <>
-          <PortConfigSection
+          <SystemInfoSection settings={settings} />
+          <GeneralSettingsSection
             settings={settings}
-            onSave={(data) => saveSettings.mutate(data)}
-            saving={saveSettings.isPending}
+            onSave={(data) => saveMutation.mutate(data)}
+            saving={saveMutation.isPending}
+          />
+          <RetentionSection
+            settings={settings}
+            onSave={(data) => retentionMutation.mutate(data)}
+            saving={retentionMutation.isPending}
+          />
+          <RestartSection
             onRestart={() => setShowRestartConfirm(true)}
-          />
-
-          <AlertThresholdSection
-            settings={settings}
-            onSave={(data) => saveSettings.mutate(data)}
-            saving={saveSettings.isPending}
-          />
-
-          <DataRetentionSection
-            settings={settings}
-            onSave={(data) => saveRetention.mutate(data)}
-            saving={saveRetention.isPending}
+            dockerAvailable={settings?.docker_available ?? true}
           />
         </>
       )}
@@ -90,181 +87,192 @@ export function Settings() {
   );
 }
 
-function PortConfigSection({
+function SystemInfoSection({ settings }: { settings: any }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <Server size={18} className="text-slate-400" />
+        <h2 className="text-lg font-semibold text-slate-900">系统信息</h2>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <InfoRow label="应用名称" value={settings?.app_name} />
+        <InfoRow label="LLM 模型" value={settings?.llm_model} />
+        <InfoRow label="LLM API" value={settings?.llm_api_base} />
+        <InfoRow label="数据库" value={settings?.db_host ? `${settings.db_host}:${settings.db_port}/${settings.db_name}` : "-"} />
+        <InfoRow label="Redis" value={settings?.redis_host ? `${settings.redis_host}:${settings.redis_port}` : "-"} />
+        <InfoRow label="调试模式" value={settings?.debug ? "开启" : "关闭"} />
+      </div>
+    </div>
+  );
+}
+
+function GeneralSettingsSection({
   settings,
   onSave,
   saving,
-  onRestart,
 }: {
   settings: any;
   onSave: (data: Record<string, any>) => void;
   saving: boolean;
-  onRestart: () => void;
 }) {
-  const [mainPort, setMainPort] = useState(String(settings?.main_port || "8000"));
-  const [auditPort, setAuditPort] = useState(String(settings?.audit_port || "8001"));
+  const [jwtExpire, setJwtExpire] = useState(String(settings?.jwt_expire_minutes ?? 240));
+  const [maxDuration, setMaxDuration] = useState(String(settings?.max_discussion_duration ?? 3600));
+  const [maxAgents, setMaxAgents] = useState(String(settings?.max_agents_per_discussion ?? 8));
+  const [regOpen, setRegOpen] = useState(settings?.registration_open ?? true);
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">端口配置</h2>
+      <h2 className="text-lg font-semibold text-slate-900">通用设置</h2>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">主服务端口</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">JWT 过期时间 (分钟)</label>
           <input
-            type="number" value={mainPort} onChange={(e) => setMainPort(e.target.value)}
+            type="number" value={jwtExpire} onChange={(e) => setJwtExpire(e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">管理后台端口</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">最大讨论时长 (秒)</label>
           <input
-            type="number" value={auditPort} onChange={(e) => setAuditPort(e.target.value)}
+            type="number" value={maxDuration} onChange={(e) => setMaxDuration(e.target.value)}
             className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
           />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">最大参与 Agent 数</label>
+          <input
+            type="number" value={maxAgents} onChange={(e) => setMaxAgents(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">开放注册</label>
+          <div className="mt-3">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox" checked={regOpen} onChange={(e) => setRegOpen(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-slate-600">{regOpen ? "允许新用户注册" : "禁止新用户注册"}</span>
+            </label>
+          </div>
+        </div>
       </div>
-      <div className="flex justify-between items-center pt-2">
+      <div className="flex justify-end pt-2">
+        <button
+          onClick={() => onSave({
+            jwt_expire_minutes: parseInt(jwtExpire),
+            max_discussion_duration: parseInt(maxDuration),
+            max_agents_per_discussion: parseInt(maxAgents),
+            registration_open: regOpen,
+          })}
+          disabled={saving}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
+        >
+          <Save size={16} /> {saving ? "保存中..." : "保存设置"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RetentionSection({
+  settings,
+  onSave,
+  saving,
+}: {
+  settings: any;
+  onSave: (data: Record<string, any>) => void;
+  saving: boolean;
+}) {
+  const [retentionDays, setRetentionDays] = useState(String(settings?.retention_days ?? 90));
+  const [dryRun, setDryRun] = useState(false);
+  const policies = settings?.retention_policies || [];
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <Database size={18} className="text-slate-400" />
+        <h2 className="text-lg font-semibold text-slate-900">数据保留策略</h2>
+      </div>
+
+      {policies.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400 uppercase font-medium">当前策略</p>
+          <div className="grid grid-cols-4 gap-3 text-xs font-medium text-slate-500 uppercase px-3">
+            <span>级别</span>
+            <span>热存储 (天)</span>
+            <span>温存储 (天)</span>
+            <span>状态</span>
+          </div>
+          {policies.map((p: any) => (
+            <div key={p.id || p.level} className="grid grid-cols-4 gap-3 items-center py-2 px-3 bg-slate-50 rounded-xl text-sm">
+              <span className={`font-medium ${p.level === "P0" ? "text-red-600" : p.level === "P1" ? "text-orange-600" : "text-slate-600"}`}>{p.level}</span>
+              <span className="text-slate-700">{p.hot_days}</span>
+              <span className="text-slate-700">{p.warm_days}</span>
+              <span className={p.is_active ? "text-green-600" : "text-slate-400"}>{p.is_active ? "启用" : "停用"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 pt-4 space-y-4">
+        <p className="text-xs text-slate-400 uppercase font-medium">更新保留策略</p>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">保留天数</label>
+            <p className="text-xs text-slate-400 mb-2">设置后将自动计算 P0/P1/P2 各级别的热/温存储天数</p>
+            <input
+              type="number" value={retentionDays} onChange={(e) => setRetentionDays(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+            />
+          </div>
+          <button
+            onClick={() => onSave({ retention_days: parseInt(retentionDays), dry_run: dryRun })}
+            disabled={saving}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-3 text-sm font-semibold transition-colors disabled:opacity-50 shrink-0"
+          >
+            <Save size={16} /> {saving ? "保存中..." : "应用"}
+          </button>
+        </div>
+        <label className="inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)}
+            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-sm text-slate-500">仅模拟（dry run），不实际删除数据</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function RestartSection({ onRestart, dockerAvailable }: { onRestart: () => void; dockerAvailable: boolean }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">重启服务</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            {dockerAvailable ? "通过 Docker 策略重启所有服务" : "Docker socket 不可用，需手动重启"}
+          </p>
+        </div>
         <button
           onClick={onRestart}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors border border-red-200"
         >
           <RotateCw size={16} /> 重启服务
         </button>
-        <button
-          onClick={() => onSave({ main_port: parseInt(mainPort), audit_port: parseInt(auditPort) })}
-          disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
-        >
-          <Save size={16} /> {saving ? "保存中..." : "保存端口配置"}
-        </button>
       </div>
     </div>
   );
 }
 
-function AlertThresholdSection({
-  settings,
-  onSave,
-  saving,
-}: {
-  settings: any;
-  onSave: (data: Record<string, any>) => void;
-  saving: boolean;
-}) {
-  const [p0Threshold, setP0Threshold] = useState(String(settings?.p0_error_threshold || "5"));
-  const [p1Threshold, setP1Threshold] = useState(String(settings?.p1_error_threshold || "20"));
-  const [tokenThreshold, setTokenThreshold] = useState(String(settings?.token_usage_alert_threshold || "1000000"));
-
+function InfoRow({ label, value }: { label: string; value: any }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">告警阈值</h2>
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">P0 错误阈值</label>
-          <input
-            type="number" value={p0Threshold} onChange={(e) => setP0Threshold(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-          />
-          <p className="text-xs text-slate-400 mt-1">每小时 P0 错误上限</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">P1 告警阈值</label>
-          <input
-            type="number" value={p1Threshold} onChange={(e) => setP1Threshold(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-          />
-          <p className="text-xs text-slate-400 mt-1">每小时 P1 事件上限</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">Token 用量告警</label>
-          <input
-            type="number" value={tokenThreshold} onChange={(e) => setTokenThreshold(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
-          />
-          <p className="text-xs text-slate-400 mt-1">每日 Token 用量上限</p>
-        </div>
-      </div>
-      <div className="flex justify-end pt-2">
-        <button
-          onClick={() => onSave({ p0_error_threshold: parseInt(p0Threshold), p1_error_threshold: parseInt(p1Threshold), token_usage_alert_threshold: parseInt(tokenThreshold) })}
-          disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
-        >
-          <Save size={16} /> {saving ? "保存中..." : "保存告警设置"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DataRetentionSection({
-  settings,
-  onSave,
-  saving,
-}: {
-  settings: any;
-  onSave: (data: Record<string, any>) => void;
-  saving: boolean;
-}) {
-  const [p0Hot, setP0Hot] = useState(String(settings?.retention?.P0?.hot_days || settings?.p0_hot_days || "90"));
-  const [p0Warm, setP0Warm] = useState(String(settings?.retention?.P0?.warm_days || settings?.p0_warm_days || "365"));
-  const [p1Hot, setP1Hot] = useState(String(settings?.retention?.P1?.hot_days || settings?.p1_hot_days || "60"));
-  const [p1Warm, setP1Warm] = useState(String(settings?.retention?.P1?.warm_days || settings?.p1_warm_days || "180"));
-  const [p2Hot, setP2Hot] = useState(String(settings?.retention?.P2?.hot_days || settings?.p2_hot_days || "30"));
-  const [p2Warm, setP2Warm] = useState(String(settings?.retention?.P2?.warm_days || settings?.p2_warm_days || "90"));
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">数据保留策略</h2>
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-4 items-end">
-          <div></div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">热存储 (天)</label>
-            <p className="text-xs text-slate-400">数据保存在主表，可快速查询</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">温存储 (天)</label>
-            <p className="text-xs text-slate-400">数据归档到历史表</p>
-          </div>
-        </div>
-        {[
-          { level: "P0", label: "P0 严重事件", hot: p0Hot, setHot: setP0Hot, warm: p0Warm, setWarm: setP0Warm },
-          { level: "P1", label: "P1 重要事件", hot: p1Hot, setHot: setP1Hot, warm: p1Warm, setWarm: setP1Warm },
-          { level: "P2", label: "P2 一般事件", hot: p2Hot, setHot: setP2Hot, warm: p2Warm, setWarm: setP2Warm },
-        ].map((row) => (
-          <div key={row.level} className="grid grid-cols-3 gap-4 items-center py-2 px-3 bg-slate-50 rounded-xl">
-            <span className={`text-sm font-medium ${
-              row.level === "P0" ? "text-red-600" : row.level === "P1" ? "text-orange-600" : "text-slate-600"
-            }`}>{row.label}</span>
-            <input
-              type="number" value={row.hot} onChange={(e) => row.setHot(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-            />
-            <input
-              type="number" value={row.warm} onChange={(e) => row.setWarm(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white"
-            />
-          </div>
-        ))}
-      </div>
-      <div className="flex justify-end pt-2">
-        <button
-          onClick={() =>
-            onSave({
-              retention: {
-                P0: { hot_days: parseInt(p0Hot), warm_days: parseInt(p0Warm) },
-                P1: { hot_days: parseInt(p1Hot), warm_days: parseInt(p1Warm) },
-                P2: { hot_days: parseInt(p2Hot), warm_days: parseInt(p2Warm) },
-              },
-            })
-          }
-          disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
-        >
-          <Save size={16} /> {saving ? "保存中..." : "保存保留策略"}
-        </button>
-      </div>
+    <div className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-xl">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium text-slate-800">{value ?? "-"}</span>
     </div>
   );
 }

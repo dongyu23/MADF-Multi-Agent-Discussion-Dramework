@@ -777,9 +777,9 @@ class AdminService:
     async def list_admins(self) -> list[dict]:
         return await self.repo.list_admin_users()
 
-    async def create_admin(self, username: str, password: str, role: str, admin_info: dict) -> dict:
+    async def create_admin(self, username: str, password: str, display_name: str | None, role: str, admin_info: dict) -> dict:
         password_hash = _pwd_context.hash(password)
-        admin = await self.repo.create_admin_user(username, password_hash, role)
+        admin = await self.repo.create_admin_user(username, password_hash, role, display_name or "")
 
         await self.audit.record(None, None, "admin.admin_created", {
             "admin_id": admin_info["admin_id"],
@@ -790,7 +790,7 @@ class AdminService:
 
         return admin
 
-    async def update_admin(self, admin_id: str, username: str | None, password: str | None, role: str | None, admin_info: dict) -> dict | None:
+    async def update_admin(self, admin_id: str, username: str | None, password: str | None, display_name: str | None, role: str | None, is_active: bool | None, admin_info: dict) -> dict | None:
         uid = uuid.UUID(admin_id)
         existing = await self.repo.find_admin_by_id(uid)
         if not existing:
@@ -798,12 +798,13 @@ class AdminService:
 
         password_hash = _pwd_context.hash(password) if password else None
         ok = await self.repo.update_admin_user(
-            uid, username=username, password_hash=password_hash, role=role,
+            uid, username=username, password_hash=password_hash,
+            display_name=display_name, role=role, is_active=is_active,
         )
         if not ok:
             return None
 
-        changed = [k for k, v in {"username": username, "password": password is not None, "role": role}.items() if v]
+        changed = [k for k, v in {"username": username, "password": password is not None, "display_name": display_name, "role": role, "is_active": is_active}.items() if v is not None]
         await self.audit.record(None, None, "admin.admin_updated", {
             "admin_id": admin_info["admin_id"],
             "admin_username": admin_info["admin_username"],

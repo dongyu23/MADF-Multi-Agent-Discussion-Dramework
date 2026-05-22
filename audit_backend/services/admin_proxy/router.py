@@ -7,7 +7,7 @@ from audit_backend.models.audit_admin_user import AuditAdminUser
 from audit_backend.services.admin_gateway import issue_service_token
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-proxy"])
-BACKEND_URL = "http://backend:8000"
+BACKEND_URL = "http://127.0.0.1:8000"
 
 
 async def _proxy(request: Request, admin: AuditAdminUser, path: str) -> Response:

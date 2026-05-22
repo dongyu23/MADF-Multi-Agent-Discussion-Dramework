@@ -55,5 +55,5 @@ export async function updateRetention(data: Record<string,any>) { return (await 
 
 // Auth
 import axios from "axios";
-const authClient = axios.create({ baseURL: "/api/v1/audit/auth", headers: { "Content-Type": "application/json" }, timeout: 15000 });
+const authClient = axios.create({ baseURL: "/audit/api/v1/audit/auth", headers: { "Content-Type": "application/json" }, timeout: 15000 });
 export async function loginAudit(username: string, password: string) { return (await authClient.post("/login", { username, password })).data.data; }

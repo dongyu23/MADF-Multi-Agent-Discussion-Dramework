@@ -95,6 +95,7 @@ server {
     }
 
     location /audit/api/ {
+        rewrite ^/audit(/api/.*)$ $1 break;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

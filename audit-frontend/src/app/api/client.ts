@@ -1,7 +1,7 @@
 import axios from "axios";
 
 export const adminClient = axios.create({
-  baseURL: "/api/v1/admin",
+  baseURL: "/audit/api/v1/admin",
   headers: { "Content-Type": "application/json" },
   timeout: 60000,
 });
@@ -18,7 +18,7 @@ adminClient.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("audit_token");
       localStorage.removeItem("audit_admin");
-      window.location.href = "/login";
+      window.location.href = "/audit/login";
     }
     return Promise.reject(error);
   }

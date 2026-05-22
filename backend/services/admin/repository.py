@@ -645,7 +645,7 @@ class AdminRepository:
 
     async def list_admin_users(self) -> list[dict]:
         stmt = text(
-            "SELECT id, username, display_name, role, is_active, created_at "
+            "SELECT id, username, display_name, role, is_active, last_login_at, created_at "
             "FROM audit_admin_users WHERE is_active = true ORDER BY created_at"
         )
         result = await self.session.execute(stmt)
@@ -654,14 +654,15 @@ class AdminRepository:
             {
                 "id": str(r[0]), "username": r[1], "display_name": r[2],
                 "role": r[3], "is_active": r[4],
-                "created_at": r[5].isoformat() if r[5] else None,
+                "last_login": r[5].isoformat() if r[5] else None,
+                "created_at": r[6].isoformat() if r[6] else None,
             }
             for r in rows
         ]
 
     async def find_admin_by_id(self, admin_id: uuid.UUID) -> dict | None:
         stmt = text(
-            "SELECT id, username, display_name, role, is_active, created_at "
+            "SELECT id, username, display_name, role, is_active, last_login_at, created_at "
             "FROM audit_admin_users WHERE id = :id"
         )
         result = await self.session.execute(stmt, {"id": admin_id})
@@ -671,7 +672,8 @@ class AdminRepository:
         return {
             "id": str(r[0]), "username": r[1], "display_name": r[2],
             "role": r[3], "is_active": r[4],
-            "created_at": r[5].isoformat() if r[5] else None,
+            "last_login": r[5].isoformat() if r[5] else None,
+            "created_at": r[6].isoformat() if r[6] else None,
         }
 
     async def create_admin_user(
@@ -701,7 +703,9 @@ class AdminRepository:
         self, admin_id: uuid.UUID,
         username: str | None = None,
         password_hash: str | None = None,
+        display_name: str | None = None,
         role: str | None = None,
+        is_active: bool | None = None,
     ) -> bool:
         sets = []
         params = {"id": admin_id}
@@ -711,9 +715,15 @@ class AdminRepository:
         if password_hash is not None:
             sets.append("password_hash = :password_hash")
             params["password_hash"] = password_hash
+        if display_name is not None:
+            sets.append("display_name = :display_name")
+            params["display_name"] = display_name
         if role is not None:
             sets.append("role = :role")
             params["role"] = role
+        if is_active is not None:
+            sets.append("is_active = :is_active")
+            params["is_active"] = is_active
         if not sets:
             return False
         sets.append("updated_at = NOW()")

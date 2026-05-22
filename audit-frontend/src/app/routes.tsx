@@ -52,4 +52,4 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+], { basename: "/audit" });
