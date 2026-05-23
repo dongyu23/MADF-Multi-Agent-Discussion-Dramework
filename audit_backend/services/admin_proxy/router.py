@@ -1,4 +1,6 @@
 """代理路由 — 审计前端 → 审计后端 → 签发服务 JWT → 转发主系统。"""
+import os
+
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
 
@@ -7,7 +9,7 @@ from audit_backend.models.audit_admin_user import AuditAdminUser
 from audit_backend.services.admin_gateway import issue_service_token
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-proxy"])
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 
 async def _proxy(request: Request, admin: AuditAdminUser, path: str) -> Response:

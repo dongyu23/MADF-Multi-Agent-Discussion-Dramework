@@ -107,7 +107,7 @@ export function Dashboard() {
                 <div className="space-y-3">
                   {healthComponents.map((c) => {
                     const comp = health?.components?.[c.key];
-                    const healthy = comp?.status === "healthy" || comp?.healthy;
+                    const healthy = comp?.status === "healthy";
                     return (
                       <div key={c.key} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-xl">
                         <div className="flex items-center gap-3">

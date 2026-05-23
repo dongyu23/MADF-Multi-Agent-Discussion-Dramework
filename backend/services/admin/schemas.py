@@ -15,8 +15,12 @@ class UserAdminItem(BaseModel):
     registered_at: str
 
 
+class UserTokenUsageSummary(BaseModel):
+    total_llm_events: int = 0
+    by_type: dict = {}
+
 class UserAdminDetail(UserAdminItem):
-    token_usage_summary: dict | None = None
+    token_usage_summary: UserTokenUsageSummary | None = None
     last_active: str | None = None
 
 

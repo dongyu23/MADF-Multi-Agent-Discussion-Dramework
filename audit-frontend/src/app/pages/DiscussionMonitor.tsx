@@ -162,7 +162,7 @@ export function DiscussionMonitor() {
                     <tr key={d.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3.5 font-medium text-slate-900 truncate">{d.topic}</td>
                       <td className="px-3 py-3.5 text-slate-500 text-xs truncate">{d.owner_username || "-"}</td>
-                      <td className="px-3 py-3.5 text-slate-700 text-center">{d.agent_count ?? d.agents?.length ?? "-"}</td>
+                      <td className="px-3 py-3.5 text-slate-700 text-center">{d.agent_count ?? "-"}</td>
                       <td className="px-3 py-3.5 text-slate-700 text-center">{d.round_count ?? "-"}</td>
                       <td className="px-3 py-3.5 text-center">{statusBadge(d.status)}</td>
                       <td className="px-3 py-3.5 text-slate-500 text-right text-xs">

@@ -94,7 +94,7 @@ export function DiscussionDetail() {
               <div key={msg.id || i} className="px-6 py-4">
                 <div className="flex items-center gap-3 mb-1">
                   <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                    {msg.message_type || msg.type}
+                    {msg.message_type}
                   </span>
                   {msg.agent_name && <span className="text-sm font-medium text-slate-700">{msg.agent_name}</span>}
                   {msg.round_number !== undefined && <span className="text-xs text-slate-400">第 {msg.round_number} 轮</span>}

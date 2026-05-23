@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     logger.info("%s starting on port 8000", settings.app_name)
+
+    # Safety check: ADMIN_JWT_SECRET must not be the default in production
+    if not settings.debug:
+        import os
+        _admin_secret = os.getenv("ADMIN_JWT_SECRET", "change-me-in-production")
+        if _admin_secret == "change-me-in-production":
+            logger.critical("ADMIN_JWT_SECRET is still the default value! Refusing to start in non-debug mode.")
+            raise RuntimeError("ADMIN_JWT_SECRET must be set to a non-default value in production")
+
     yield
     await async_engine.dispose()
     logger.info("%s shut down", settings.app_name)

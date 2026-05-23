@@ -73,7 +73,7 @@ export function SystemHealth() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {healthComponents.map((c) => {
               const comp = health?.components?.[c.key] || {};
-              const healthy = comp.status === "healthy" || comp.healthy;
+              const healthy = comp.status === "healthy";
               return (
                 <div key={c.key} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
@@ -115,9 +115,9 @@ export function SystemHealth() {
                             <div className="flex items-start gap-3 min-w-0">
                               <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
                               <div className="min-w-0">
-                                <div className="text-sm font-medium text-slate-700">{err.event_type || err.type || "未知错误"}</div>
+                                <div className="text-sm font-medium text-slate-700">{err.event_type || "未知错误"}</div>
                                 <div className="text-xs text-slate-400 mt-0.5">
-                                  {new Date(err.created_at || err.timestamp).toLocaleString("zh-CN")}
+                                  {new Date(err.created_at).toLocaleString("zh-CN")}
                                 </div>
                                 <div className="text-sm text-slate-500 mt-1 truncate">{err.message}</div>
                               </div>

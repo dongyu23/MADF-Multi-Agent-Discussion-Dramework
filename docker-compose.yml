@@ -60,6 +60,7 @@ services:
       - AUDIT_DEFAULT_ADMIN_USERNAME=${AUDIT_ADMIN_USERNAME:-admin}
       - AUDIT_DEFAULT_ADMIN_PASSWORD=${AUDIT_ADMIN_PASSWORD:-audit123}
       - AUDIT_ALLOWED_IPS=${AUDIT_ALLOWED_IPS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-change-me-in-production}
     depends_on:
       postgres:
         condition: service_healthy
