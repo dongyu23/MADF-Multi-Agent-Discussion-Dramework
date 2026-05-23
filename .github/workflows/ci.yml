@@ -134,12 +134,21 @@ jobs:
           done
       - name: Verify main API returns JSON via Nginx
         run: |
-          curl -sf http://localhost/api/v1/health | python -c "import sys,json; d=json.load(sys.stdin); assert d['code']==200, f'unexpected: {d}'"
+          STATUS=$(curl -s -o /tmp/resp.json -w '%{http_code}' http://localhost/api/v1/health)
+          echo "HTTP $STATUS"
+          python -c "import json; d=json.load(open('/tmp/resp.json')); assert d['code']==200, f'unexpected: {d}'"
           echo "Main API OK"
-      - name: Verify audit API returns JSON via Nginx (not HTML)
+      - name: Verify audit API returns JSON via Nginx
         run: |
-          curl -sf http://localhost/audit/api/v1/audit/auth/login -X POST -H 'Content-Type: application/json' -d '{"username":"x","password":"x"}' | python -c "import sys,json; d=json.load(sys.stdin); assert d['code']!=200, f'expected auth failure, got: {d}'"
-          echo "Audit API OK (correctly rejected bad login)"
+          STATUS=$(curl -s -o /tmp/resp.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"username":"x","password":"x"}' http://localhost/audit/api/v1/audit/auth/login)
+          echo "HTTP $STATUS"
+          python -c "
+          import json
+          d = json.load(open('/tmp/resp.json'))
+          assert d['code'] != 200, f'expected auth failure but got 200: {d}'
+          print(f'Auth rejected as expected: code={d[\"code\"]}')
+          "
+          echo "Audit API OK"
       - name: Verify audit SPA serves HTML
         run: |
           CT=$(curl -s -o /dev/null -w '%{content_type}' http://localhost/audit/login)
