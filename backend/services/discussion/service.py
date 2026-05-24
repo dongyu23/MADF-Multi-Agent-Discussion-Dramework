@@ -184,13 +184,18 @@ class DiscussionService:
                 repo = DiscussionRepository(bg_session)
 
                 if event_type == "agent_speak_end":
+                    content = data.get("content", "").strip()
+                    if not content:
+                        logger.warning("Skip empty agent_speak message for discussion %s round %s agent %s",
+                                       disc_id, data.get("round", 0), data.get("agent_name", ""))
+                        content = "本轮发言生成超时，已跳过空白内容。"
                     await repo.add_message(
                         discussion_id=disc_id,
                         round_number=data.get("round", 0),
                         agent_id=None,
                         agent_name=data.get("agent_name", "").replace("-perspective", ""),
                         message_type="agent_speak",
-                        content=data.get("content", ""),
+                        content=content,
                     )
 
                 elif event_type == "agent_think":
@@ -224,7 +229,9 @@ class DiscussionService:
                 # 3. Business audit for LLM events (with token tracking)
                 if event_type in ("discussion_end", "discussion_error",
                                   "agent_think", "agent_speak_end",
-                                  "host_intro", "host_summary"):
+                                  "agent_think_started", "agent_think_finished",
+                                  "agent_think_timeout", "agent_speak_timeout",
+                                  "host_intro", "host_intro_ready", "host_summary"):
                     audit = AuditRepository(bg_session)
                     audit_payload = {
                         k: v for k, v in data.items()

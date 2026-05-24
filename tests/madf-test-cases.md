@@ -2,7 +2,7 @@
 
 ## Overview
 - **Feature**: 一期全部功能（A-M）
-- **Requirements Source**: CLAUDE.md
+- **Requirements Source**: AGENTS.md
 - **Test Coverage**: 功能性、边界条件、错误处理、状态转换
 - **Last Updated**: 2026-05-14
 
@@ -387,8 +387,8 @@
 - **Requirement**: L
 - **Priority**: Medium
 - **Test Steps**:
-  1. GET `/api/v1/discussions/{id}/audit`
-  2. 测试筛选: `?event_type=agent_think`
+  1. GET `/api/v1/admin/audit/events?discussion_id={id}` 或审计后台 `GET /api/v1/audit/events?discussion_id={id}`
+  2. 测试筛选: `?event_type=discussion.created`
   3. 测试游标: `?after={timestamp}`
 - **Expected Results**:
   - 返回该讨论的所有审计事件

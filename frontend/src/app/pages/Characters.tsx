@@ -1,8 +1,18 @@
 import { Link, useNavigate } from "react-router";
-import { Plus, Trash2, Globe } from "lucide-react";
+import { ArrowRight, BookOpen, Globe, Plus, Sparkles, Trash2 } from "lucide-react";
+import { motion } from "motion/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getMyCharacters, deleteCharacter, updateCharacter, type CharacterItem } from "../api/characters";
 import { toast } from "sonner";
+
+function statusMeta(status: string) {
+  const map: Record<string, { label: string; tone: string; dot: string }> = {
+    ready: { label: "就绪", tone: "border-[#207362]/25 bg-[#207362]/10 text-[#185f51]", dot: "bg-[#207362]" },
+    generating: { label: "生成中", tone: "border-[#db9a34]/35 bg-[#db9a34]/12 text-[#8a5c16]", dot: "bg-[#db9a34] animate-pulse" },
+    error: { label: "错误", tone: "border-rose-300 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
+  };
+  return map[status] || { label: status || "未知", tone: "border-[#d8cbb7] bg-[#f9f4e9] text-[#6d6254]", dot: "bg-[#9a8b76]" };
+}
 
 export function Characters() {
   const navigate = useNavigate();
@@ -10,7 +20,7 @@ export function Characters() {
 
   const { data: characters = [], isLoading } = useQuery({
     queryKey: ["characters"],
-    queryFn: () => getMyCharacters().then(d => d.items || []),
+    queryFn: () => getMyCharacters().then((d) => d.items || []),
     staleTime: 20_000,
   });
 
@@ -35,104 +45,97 @@ export function Characters() {
     onError: (err: any) => toast.error(err.response?.data?.message || "操作失败"),
   });
 
-  const statusLabel = (s: string) => {
-    const map: Record<string, string> = { ready: "就绪", generating: "生成中", error: "错误" };
-    return map[s] || s;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="p-8 max-w-7xl mx-auto">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-slate-200 rounded w-48" />
-          <div className="h-64 bg-slate-200 rounded-2xl" />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">我的角色</h1>
-          <p className="text-slate-500 mt-1">管理您自定义的智能体技能</p>
-        </div>
-        <Link
-          to="/characters/generate"
-          className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-        >
-          <Plus size={18} />
-          生成新角色
-        </Link>
-      </div>
-
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-        {characters.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">
-            <p className="text-lg mb-2">还没有角色</p>
-            <p>点击"生成新角色"开始创建你的第一个 AI 角色</p>
+    <div className="relative min-h-full overflow-hidden bg-[#f6f3ec] text-[#1d1a16]">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(29,26,22,0.045)_1px,transparent_1px),linear-gradient(rgba(29,26,22,0.045)_1px,transparent_1px)] bg-[size:48px_48px]" />
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="flex flex-col justify-between gap-4 border-b border-[#d8cbb7] pb-6 md:flex-row md:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8a6b37]">Character Assets</p>
+            <h1 className="mt-2 font-['Noto_Serif_SC'] text-3xl font-semibold leading-tight md:text-4xl">我的角色</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6d6254]">管理由 Skill 驱动的角色文件、公开状态和讨论可用性。</p>
           </div>
+          <Link
+            to="/characters/generate"
+            className="inline-flex h-11 w-fit items-center gap-2 rounded-lg bg-[#207362] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(32,115,98,0.24)] transition hover:-translate-y-0.5 hover:bg-[#185f51]"
+          >
+            <Plus size={18} />
+            生成新角色
+          </Link>
+        </header>
+
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="h-52 animate-pulse rounded-lg border border-[#d8cbb7] bg-[#fffdf7]" />
+            ))}
+          </div>
+        ) : characters.length === 0 ? (
+          <section className="rounded-lg border border-dashed border-[#cdbfa9] bg-[#fffdf7] p-10 text-center shadow-[0_16px_44px_rgba(53,45,32,0.07)]">
+            <Sparkles className="mx-auto text-[#db9a34]" size={34} />
+            <h2 className="mt-4 text-xl font-semibold">还没有角色</h2>
+            <p className="mt-2 text-sm text-[#6d6254]">生成第一个角色后，就可以把它放入圆桌讨论。</p>
+          </section>
         ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-sm font-medium text-slate-500">
-                <th className="p-4">名称</th>
-                <th className="p-4">描述</th>
-                <th className="p-4">状态</th>
-                <th className="p-4">公开</th>
-                <th className="p-4 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {characters.map((char: CharacterItem) => (
-                <tr
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {characters.map((char: CharacterItem, index: number) => {
+              const meta = statusMeta(char.status);
+              return (
+                <motion.article
                   key={char.id}
-                  className="hover:bg-slate-50 transition-colors group cursor-pointer"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.035 }}
                   onClick={() => navigate(`/characters/${char.id}`)}
+                  className="group cursor-pointer rounded-lg border border-[#d8cbb7] bg-[#fffdf7] p-5 shadow-[0_14px_38px_rgba(53,45,32,0.08)] transition hover:-translate-y-0.5 hover:border-[#252018] hover:shadow-[0_18px_50px_rgba(53,45,32,0.12)]"
                 >
-                  <td className="p-4">
-                    <div className="font-semibold text-slate-900 flex items-center gap-3 hover:text-indigo-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                        {char.name.charAt(0)}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#1d1a16] text-[#f0d9ad]">
+                        <BookOpen size={20} />
                       </div>
-                      {char.name}
+                      <div className="min-w-0">
+                        <h2 className="truncate text-lg font-semibold">{char.name.replace(/-perspective$/, "")}</h2>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                          <span className={`rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${meta.tone}`}>{meta.label}</span>
+                        </div>
+                      </div>
                     </div>
-                  </td>
-                  <td className="p-4 text-slate-500 text-sm max-w-xs truncate">{char.description || "-"}</td>
-                  <td className="p-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                      char.status === "ready" ? "bg-green-100 text-green-700"
-                      : char.status === "generating" ? "bg-amber-100 text-amber-700"
-                      : "bg-red-100 text-red-700"
-                    }`}>
-                      {char.status === "generating" && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}
-                      {statusLabel(char.status)}
-                    </span>
-                  </td>
-                  <td className="p-4 text-sm text-slate-500">{char.is_public ? "公开" : "私有"}</td>
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 opacity-100 transition md:opacity-0 md:group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
                       <button
-                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        className="rounded-lg p-2 text-[#8a6b37] transition hover:bg-[#f0d9ad]/45 hover:text-[#1d1a16]"
                         title={char.is_public ? "取消公开" : "公开到画廊"}
                         onClick={() => togglePublicMutation.mutate({ id: char.id, isPublic: !char.is_public })}
                       >
                         <Globe size={18} />
                       </button>
                       <button
-                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="rounded-lg p-2 text-[#9a8b76] transition hover:bg-rose-50 hover:text-rose-600"
                         title="删除"
-                        onClick={() => { if (confirm("确定要删除？")) deleteMutation.mutate(char.id); }}
+                        onClick={() => {
+                          if (confirm("确定要删除？")) deleteMutation.mutate(char.id);
+                        }}
                       >
                         <Trash2 size={18} />
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+
+                  <p className="mt-5 line-clamp-3 min-h-[4.5rem] text-sm leading-6 text-[#6d6254]">{char.description || "暂无角色描述"}</p>
+                  <div className="mt-5 flex items-center justify-between border-t border-[#e4dccd] pt-4">
+                    <span className="rounded-lg border border-[#d8cbb7] bg-[#f9f4e9] px-2.5 py-1 text-xs font-semibold text-[#6d6254]">
+                      {char.is_public ? "公开画廊" : "私有角色"}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#207362]">
+                      查看文件
+                      <ArrowRight size={15} className="transition group-hover:translate-x-1" />
+                    </span>
+                  </div>
+                </motion.article>
+              );
+            })}
+          </section>
         )}
       </div>
     </div>

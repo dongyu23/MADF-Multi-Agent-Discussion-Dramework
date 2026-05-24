@@ -114,18 +114,20 @@ class CharacterService:
             has_more=(page * page_size) < total,
         )
 
-    async def get_character(self, skill_id: str) -> CharacterResponse:
+    async def get_character(self, skill_id: str, user_id: str = "") -> CharacterResponse:
         sid = uuid.UUID(skill_id)
         skill = await self.repo.find_by_id(sid)
         if not skill:
             raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
+        self._ensure_can_read(skill, user_id)
         return CharacterService._to_response(skill)
 
-    async def update_character(self, skill_id: str, **kwargs) -> CharacterResponse:
+    async def update_character(self, skill_id: str, user_id: str, **kwargs) -> CharacterResponse:
         sid = uuid.UUID(skill_id)
         skill = await self.repo.find_by_id(sid)
         if not skill:
             raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
+        self._ensure_can_write(skill, user_id)
         changed = {k: v for k, v in kwargs.items() if v is not None and getattr(skill, k) != v}
         skill = await self.repo.update(skill, **kwargs)
         if changed:
@@ -279,24 +281,46 @@ class CharacterService:
 
     # ── Files ─────────────────────────────────────────────
 
-    async def list_files(self, skill_id: str) -> FileListResponse:
+    async def list_files(self, skill_id: str, user_id: str = "") -> FileListResponse:
         skill = await self.repo.find_by_id(uuid.UUID(skill_id))
         if not skill:
             raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
-        files = await self.fm.list_files(str(skill.owner_id), skill.name)
-        return FileListResponse(files=files, skill_dir=f"{skill.owner_id}/{skill.name}")
+        self._ensure_can_read(skill, user_id)
+        try:
+            files = await self.fm.list_files_by_path(skill.file_path)
+        except ValueError as exc:
+            raise BusinessException(ErrorCode.INVALID_PARAMS, str(exc)) from exc
+        if not files and skill.status != "generating":
+            raise BusinessException(
+                ErrorCode.SKILL_NOT_FOUND,
+                f"Skill files missing on disk: {skill.file_path}",
+            )
+        return FileListResponse(files=files, skill_dir=skill.file_path)
 
-    async def read_file(self, skill_id: str, rel_path: str) -> str:
+    async def read_file(self, skill_id: str, rel_path: str, user_id: str = "") -> str:
         skill = await self.repo.find_by_id(uuid.UUID(skill_id))
         if not skill:
             raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
-        return await self.fm.read_file(str(skill.owner_id), skill.name, rel_path)
+        self._ensure_can_read(skill, user_id)
+        try:
+            return await self.fm.read_file_by_path(skill.file_path, rel_path)
+        except FileNotFoundError as exc:
+            raise BusinessException(
+                ErrorCode.SKILL_NOT_FOUND,
+                f"Skill file not found: {skill.file_path}/{rel_path}",
+            ) from exc
+        except ValueError as exc:
+            raise BusinessException(ErrorCode.INVALID_PARAMS, str(exc)) from exc
 
-    async def write_file(self, skill_id: str, rel_path: str, content: str) -> None:
+    async def write_file(self, skill_id: str, rel_path: str, content: str, user_id: str) -> None:
         skill = await self.repo.find_by_id(uuid.UUID(skill_id))
         if not skill:
             raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
-        await self.fm.write_file(str(skill.owner_id), skill.name, rel_path, content)
+        self._ensure_can_write(skill, user_id)
+        try:
+            await self.fm.write_file_by_path(skill.file_path, rel_path, content)
+        except ValueError as exc:
+            raise BusinessException(ErrorCode.INVALID_PARAMS, str(exc)) from exc
         # P2: Audit file content modification
         await self.audit.record(None, skill.owner_id, "skill.file_write", {
             "skill_id": str(skill.id), "file_path": rel_path,
@@ -328,8 +352,13 @@ class CharacterService:
         asyncio.create_task(run_skill_generation(skill.id, owner_id, query, skill_name))
         return CharacterService._to_response(skill)
 
-    def generation_sse(self, skill_id: str):
-        return generation_sse_stream(skill_id)
+    async def generation_sse(self, skill_id: str, user_id: str, after_seq: int = 0):
+        skill = await self.repo.find_by_id(uuid.UUID(skill_id))
+        if not skill:
+            raise BusinessException(ErrorCode.SKILL_NOT_FOUND)
+        if not user_id or str(skill.owner_id) != user_id:
+            raise BusinessException(ErrorCode.FORBIDDEN)
+        return generation_sse_stream(skill_id, after_seq=after_seq)
 
     # ── Helpers ───────────────────────────────────────────
 
@@ -348,6 +377,18 @@ class CharacterService:
             created_at=skill.created_at.isoformat(), updated_at=skill.updated_at.isoformat(),
             quotes=quotes,
         )
+
+    @staticmethod
+    def _ensure_can_read(skill, user_id: str) -> None:
+        if skill.is_public or (user_id and str(skill.owner_id) == user_id):
+            return
+        raise BusinessException(ErrorCode.FORBIDDEN)
+
+    @staticmethod
+    def _ensure_can_write(skill, user_id: str) -> None:
+        if user_id and str(skill.owner_id) == user_id:
+            return
+        raise BusinessException(ErrorCode.FORBIDDEN)
 
     _quotes_cache: dict[tuple[str, str], tuple[float, list[str]]] = {}
 

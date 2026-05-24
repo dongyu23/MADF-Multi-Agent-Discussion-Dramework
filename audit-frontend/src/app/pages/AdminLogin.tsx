@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Shield, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { useAuditAuth } from "../store/audit-auth";
@@ -11,6 +11,8 @@ export function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuditAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = searchParams.get("redirect") || "/";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +24,7 @@ export function AdminLogin() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate("/");
+      navigate(redirect, { replace: true });
     } catch (err: any) {
       setError(err?.response?.data?.message || "登录失败，请检查用户名和密码");
     } finally {

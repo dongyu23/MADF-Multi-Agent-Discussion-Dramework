@@ -95,13 +95,18 @@ async def health_detailed() -> Result[dict]:
 
     # LLM API (lightweight: just check connectivity)
     t0 = time.monotonic()
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{settings.llm_api_base}/models",
-                headers={"Authorization": f"Bearer {settings.llm_api_key or ''}"})
-        result["components"]["llm_api"] = {"status": "healthy" if resp.status_code < 500 else "degraded",
-            "latency_ms": round((time.monotonic() - t0) * 1000, 1), "http_status": resp.status_code}
-    except Exception as e:
-        result["components"]["llm_api"] = {"status": "unhealthy", "error": str(e)[:200]}
+    if not settings.llm_api_key:
+        result["components"]["llm_api"] = {"status": "not_configured"}
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(
+                    f"{settings.llm_api_base}/models",
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                )
+            result["components"]["llm_api"] = {"status": "healthy" if resp.status_code < 500 else "degraded",
+                "latency_ms": round((time.monotonic() - t0) * 1000, 1), "http_status": resp.status_code}
+        except Exception as e:
+            result["components"]["llm_api"] = {"status": "unhealthy", "error": str(e)[:200]}
 
     return Result.ok(result)

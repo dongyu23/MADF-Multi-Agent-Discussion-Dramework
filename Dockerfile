@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir \
     fastapi uvicorn[standard] sqlalchemy[asyncio] asyncpg alembic \
-    pydantic pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" "bcrypt<5" \
+    pydantic pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" "bcrypt<4" \
     redis httpx aiofiles python-dotenv psycopg2-binary \
     langchain-openai tavily-python supervisor
 

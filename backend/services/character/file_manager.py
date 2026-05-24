@@ -15,6 +15,28 @@ class SkillFileManager:
     def _skill_dir(self, owner_id: str, skill_name: str) -> Path:
         return SKILLS_ROOT / owner_id / skill_name
 
+    def _skill_dir_from_file_path(self, file_path: str) -> Path:
+        rel_path = Path(file_path)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise ValueError(f"Invalid skill file_path: {file_path}")
+        skill_dir = (SKILLS_ROOT / rel_path).resolve()
+        self._ensure_within(skill_dir, SKILLS_ROOT.resolve(), file_path)
+        return skill_dir
+
+    def _ensure_within(self, path: Path, root: Path, label: str) -> None:
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"Path traversal denied: {label}") from exc
+
+    def _resolve_child(self, root: Path, rel_path: str) -> Path:
+        full_path = (root / rel_path).resolve()
+        try:
+            full_path.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ValueError(f"Path traversal denied: {rel_path}") from exc
+        return full_path
+
     def _ensure_dir(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
@@ -27,23 +49,37 @@ class SkillFileManager:
     async def write_file(self, owner_id: str, skill_name: str, rel_path: str, content: str) -> Path:
         """写入文件。rel_path 相对于 skill 根目录，如 'SKILL.md' 或 'references/research/01-writings.md'。"""
         skill_dir = self._skill_dir(owner_id, skill_name)
-        full_path = skill_dir / rel_path
-        full_path = full_path.resolve()
-        if not str(full_path).startswith(str(skill_dir.resolve())):
-            raise ValueError(f"Path traversal denied: {rel_path}")
+        full_path = self._resolve_child(skill_dir, rel_path)
         await asyncio.to_thread(self._ensure_dir, full_path.parent)
         await asyncio.to_thread(full_path.write_text, content, encoding="utf-8")
         return full_path
 
     async def read_file(self, owner_id: str, skill_name: str, rel_path: str) -> str:
         skill_dir = self._skill_dir(owner_id, skill_name)
-        full_path = (skill_dir / rel_path).resolve()
-        if not str(full_path).startswith(str(skill_dir.resolve())):
-            raise ValueError(f"Path traversal denied: {rel_path}")
+        full_path = self._resolve_child(skill_dir, rel_path)
         return await asyncio.to_thread(full_path.read_text, encoding="utf-8")
 
     async def list_files(self, owner_id: str, skill_name: str) -> list[str]:
         skill_dir = self._skill_dir(owner_id, skill_name)
+        return await self.list_files_in_dir(skill_dir)
+
+    async def read_file_by_path(self, file_path: str, rel_path: str) -> str:
+        skill_dir = self._skill_dir_from_file_path(file_path)
+        full_path = self._resolve_child(skill_dir, rel_path)
+        return await asyncio.to_thread(full_path.read_text, encoding="utf-8")
+
+    async def write_file_by_path(self, file_path: str, rel_path: str, content: str) -> Path:
+        skill_dir = self._skill_dir_from_file_path(file_path)
+        full_path = self._resolve_child(skill_dir, rel_path)
+        await asyncio.to_thread(self._ensure_dir, full_path.parent)
+        await asyncio.to_thread(full_path.write_text, content, encoding="utf-8")
+        return full_path
+
+    async def list_files_by_path(self, file_path: str) -> list[str]:
+        skill_dir = self._skill_dir_from_file_path(file_path)
+        return await self.list_files_in_dir(skill_dir)
+
+    async def list_files_in_dir(self, skill_dir: Path) -> list[str]:
         if not skill_dir.exists():
             return []
 

@@ -24,8 +24,17 @@ client.interceptors.response.use(
       const code = error.response.data?.code;
       if (code === 1002 || code === 1003) {
         localStorage.removeItem("token");
-        const redirect = encodeURIComponent(window.location.pathname + window.location.search);
-        window.location.href = `/login?redirect=${redirect}`;
+        window.dispatchEvent(new Event("madf-auth-cleared"));
+        const params = new URLSearchParams(window.location.search);
+        const currentPath = window.location.pathname;
+        const redirectTarget =
+          currentPath === "/login" || currentPath === "/register"
+            ? params.get("redirect") || "/dashboard"
+            : currentPath + window.location.search;
+        const loginUrl = `/login?redirect=${encodeURIComponent(redirectTarget)}`;
+        if (window.location.pathname + window.location.search !== loginUrl) {
+          window.location.replace(loginUrl);
+        }
       }
     }
     return Promise.reject(error);

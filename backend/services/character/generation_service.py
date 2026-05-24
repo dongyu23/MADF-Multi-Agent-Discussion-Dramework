@@ -87,9 +87,11 @@ from pathlib import Path
 from agent_engine.skill_gen.agent import create_nvwa_agent
 from backend.config import settings
 from backend.deps import async_session_factory
+from backend.models.skill_generation_event import SkillGenerationEvent
 from backend.services.audit.repository import AuditRepository
 from backend.services.character.file_manager import SKILLS_ROOT
 from backend.services.character.repository import CharacterRepository
+from sqlalchemy import func, select
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +137,23 @@ SENTINEL = object()
 class GenerationProgress:
     """SSE 进度追踪器，支持多订阅者。"""
 
-    def __init__(self):
+    def __init__(self, skill_id: str, owner_id: str):
+        self.skill_id = uuid.UUID(skill_id)
+        self.owner_id = uuid.UUID(owner_id)
         self._queues: list[asyncio.Queue] = []
         self._current_status = {"level": "idle", "message": "等待中"}
         self._lock = asyncio.Lock()
         self._closed = False
+        self._seq = 0
+
+    async def initialize(self) -> None:
+        async with async_session_factory() as session:
+            stmt = select(func.coalesce(func.max(SkillGenerationEvent.seq), 0)).where(
+                SkillGenerationEvent.deleted_at.is_(None),
+                SkillGenerationEvent.skill_id == self.skill_id,
+            )
+            result = await session.execute(stmt)
+            self._seq = int(result.scalar_one() or 0)
 
     async def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
@@ -155,7 +169,13 @@ class GenerationProgress:
                 pass
 
     async def push(self, level: str, message: str, extra: dict | None = None) -> None:
-        msg: dict = {"level": level, "message": message}
+        event = await self._persist(level, message, extra)
+        msg: dict = {
+            "seq": event.seq,
+            "level": level,
+            "message": message,
+            "created_at": event.created_at.isoformat(),
+        }
         if extra:
             msg["extra"] = extra
         self._current_status = msg
@@ -165,6 +185,22 @@ class GenerationProgress:
                     q.put_nowait(msg)
                 except asyncio.QueueFull:
                     pass
+
+    async def _persist(self, level: str, message: str, extra: dict | None) -> SkillGenerationEvent:
+        self._seq += 1
+        async with async_session_factory() as session:
+            event = SkillGenerationEvent(
+                skill_id=self.skill_id,
+                owner_id=self.owner_id,
+                seq=self._seq,
+                level=level,
+                message=message,
+                extra=extra,
+            )
+            session.add(event)
+            await session.commit()
+            await session.refresh(event)
+            return event
 
     async def close(self) -> None:
         async with self._lock:
@@ -181,11 +217,18 @@ _progress: dict[str, GenerationProgress] = {}
 _progress_lock = asyncio.Lock()
 
 
-async def _get_progress(skill_id: str) -> GenerationProgress | None:
+async def _get_progress(skill_id: str, owner_id: str) -> GenerationProgress:
     async with _progress_lock:
         if skill_id not in _progress:
-            _progress[skill_id] = GenerationProgress()
+            progress = GenerationProgress(skill_id, owner_id)
+            await progress.initialize()
+            _progress[skill_id] = progress
         return _progress[skill_id]
+
+
+async def _get_existing_progress(skill_id: str) -> GenerationProgress | None:
+    async with _progress_lock:
+        return _progress.get(skill_id)
 
 
 async def _cleanup_progress(skill_id: str) -> None:
@@ -209,7 +252,7 @@ async def run_skill_generation(
       level="error" — 生成失败
     """
     try:
-        progress = await _get_progress(str(skill_id))
+        progress = await _get_progress(str(skill_id), owner_id)
         await progress.push("main", "阶段 0/5：正在创建 Deep Agent 实例…")
 
         # 创建工作目录
@@ -494,26 +537,64 @@ async def run_skill_generation(
         await _cleanup_progress(str(skill_id))
 
 
-async def generation_sse_stream(skill_id: str) -> str:
-    """SSE 端点生成器，前端可通过 EventSource 连接。"""
+def _event_to_payload(event: SkillGenerationEvent) -> dict:
+    payload = {
+        "seq": event.seq,
+        "level": event.level,
+        "message": event.message,
+        "created_at": event.created_at.isoformat(),
+    }
+    if event.extra:
+        payload["extra"] = event.extra
+    return payload
+
+
+async def _load_generation_events(skill_id: str, after_seq: int = 0) -> list[dict]:
+    async with async_session_factory() as session:
+        stmt = (
+            select(SkillGenerationEvent)
+            .where(
+                SkillGenerationEvent.deleted_at.is_(None),
+                SkillGenerationEvent.skill_id == uuid.UUID(skill_id),
+                SkillGenerationEvent.seq > after_seq,
+            )
+            .order_by(SkillGenerationEvent.seq.asc())
+        )
+        result = await session.execute(stmt)
+        return [_event_to_payload(event) for event in result.scalars().all()]
+
+
+async def generation_sse_stream(skill_id: str, after_seq: int = 0) -> str:
+    """SSE endpoint generator: replay persisted history, then live events."""
     import json
 
-    progress = await _get_progress(skill_id)
-    if progress is None:
-        yield f"data: {json.dumps({'level': 'error', 'message': '生成任务不存在'}, ensure_ascii=False)}\n\n"
+    progress = await _get_existing_progress(skill_id)
+    queue = await progress.subscribe() if progress and not progress._closed else None
+    last_seq = after_seq
+
+    for payload in await _load_generation_events(skill_id, after_seq):
+        last_seq = max(last_seq, int(payload.get("seq") or 0))
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    if queue is None:
         return
-    queue = await progress.subscribe()
+
     try:
-        yield f"data: {json.dumps(progress._current_status, ensure_ascii=False)}\n\n"
         while True:
             try:
                 msg = await asyncio.wait_for(queue.get(), timeout=15)
                 if msg is SENTINEL:
                     return
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                seq = int(msg.get("seq") or 0)
+                if seq > last_seq:
+                    last_seq = seq
+                    yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
             except TimeoutError:
                 if progress._closed:
                     return
-                yield f"data: {json.dumps(progress._current_status, ensure_ascii=False)}\n\n"
+                if int(progress._current_status.get("seq") or 0) > last_seq:
+                    last_seq = int(progress._current_status.get("seq") or 0)
+                    yield f"data: {json.dumps(progress._current_status, ensure_ascii=False)}\n\n"
     finally:
-        await progress.unsubscribe(queue)
+        if queue is not None:
+            await progress.unsubscribe(queue)

@@ -6,6 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "test:real-api": "node scripts/real-api-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -71,6 +73,7 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "4.1.12",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
@@ -79,7 +82,8 @@
     "@vitejs/plugin-react": "4.7.0",
     "jsdom": "^26.0.0",
     "tailwindcss": "4.1.12",
-    "vite": "6.3.5",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.2",
     "vitest": "^3.1.0"
   },
   "peerDependencies": {
@@ -96,7 +100,7 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "6.3.5"
+      "vite": "6.4.2"
     }
   }
 }

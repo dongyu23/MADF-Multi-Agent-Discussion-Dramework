@@ -10,7 +10,7 @@ name = "madf"
 version = "0.1.0"
 description = "Multi-Agent Discussion Framework - Enterprise roundtable discussion platform powered by Deep Agents"
 requires-python = ">=3.12"
-readme = "CLAUDE.md"
+readme = "AGENTS.md"
 license = {text = "MIT"}
 
 dependencies = [

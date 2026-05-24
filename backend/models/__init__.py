@@ -4,6 +4,7 @@ from backend.models.discussion import Discussion
 from backend.models.discussion_agent import DiscussionAgent
 from backend.models.discussion_message import DiscussionMessage
 from backend.models.skill import Skill
+from backend.models.skill_generation_event import SkillGenerationEvent
 from backend.models.user import User
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "DiscussionAgent",
     "DiscussionMessage",
     "Skill",
+    "SkillGenerationEvent",
     "User",
 ]

@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Link, Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard,
@@ -24,7 +24,13 @@ function PageFallback() {
 export function AuditLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { admin, logout } = useAuditAuth();
+  const { admin, token, logout } = useAuditAuth();
+
+  useEffect(() => {
+    if (admin || token) return;
+    const redirect = encodeURIComponent(location.pathname + location.search);
+    navigate(`/login?redirect=${redirect}`, { replace: true });
+  }, [admin, token, location.pathname, location.search, navigate]);
 
   const handleLogout = () => {
     logout();
@@ -40,6 +46,14 @@ export function AuditLayout() {
     { to: "/admins", icon: <UserCog size={20} />, label: "管理员" },
     { to: "/settings", icon: <Settings size={20} />, label: "系统设置" },
   ];
+
+  if (!admin && !token) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-indigo-600" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">

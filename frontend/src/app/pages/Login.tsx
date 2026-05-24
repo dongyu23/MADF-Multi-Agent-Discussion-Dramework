@@ -1,22 +1,25 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
-import { Sparkles, ArrowRight, Loader2 } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { Sparkles, ArrowRight, Loader2, Home as HomeIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { register as apiRegister, login as apiLogin } from "../api/auth";
 import { useAuth } from "../store/auth";
 import { toast } from "sonner";
 
-export function Login() {
+type AuthMode = "login" | "register";
+
+export function Login({ initialMode = "login" }: { initialMode?: AuthMode }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setAuth } = useAuth();
 
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode] = useState<AuthMode>(initialMode);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const redirect = searchParams.get("redirect") || "/";
+  const redirect = searchParams.get("redirect") || "/dashboard";
+  const encodedRedirect = encodeURIComponent(redirect);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +34,9 @@ export function Login() {
       toast.success(mode === "login" ? "登录成功" : "注册成功");
       navigate(redirect, { replace: true });
     } catch (err: any) {
-      const msg = err.response?.data?.message || "操作失败";
+      const msg =
+        err.response?.data?.message ||
+        (err.response?.status >= 500 ? "主系统服务不可用，请确认后端已启动" : "操作失败");
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -41,6 +46,13 @@ export function Login() {
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-50 font-sans selection:bg-amber-500/30 overflow-x-hidden flex items-center justify-center">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-amber-600/10 blur-[120px] rounded-full pointer-events-none mix-blend-screen" />
+      <Link
+        to="/"
+        className="absolute left-5 top-5 z-20 inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-slate-300 backdrop-blur transition hover:bg-white/10 hover:text-white"
+      >
+        <HomeIcon size={16} />
+        返回首页
+      </Link>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -109,7 +121,7 @@ export function Login() {
           <div className="text-center">
             <button
               type="button"
-              onClick={() => setMode(mode === "login" ? "register" : "login")}
+              onClick={() => navigate(mode === "login" ? `/register?redirect=${encodedRedirect}` : `/login?redirect=${encodedRedirect}`)}
               className="text-sm text-slate-400 hover:text-amber-200 transition-colors"
             >
               {mode === "login" ? "没有账号？立即注册" : "已有账号？去登录"}
@@ -119,4 +131,8 @@ export function Login() {
       </motion.div>
     </div>
   );
+}
+
+export function Register() {
+  return <Login initialMode="register" />;
 }

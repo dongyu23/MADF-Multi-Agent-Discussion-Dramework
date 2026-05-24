@@ -1,15 +1,29 @@
 import { Link } from "react-router";
-import { Plus, Users, Play, Clock, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Play, Plus, Trash2, Users } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getDiscussions, deleteDiscussion } from "../api/discussions";
 import { toast } from "sonner";
 
+function statusMeta(status: string) {
+  const map: Record<string, { label: string; tone: string; dot: string }> = {
+    running: { label: "进行中", tone: "border-[#207362]/25 bg-[#207362]/10 text-[#185f51]", dot: "bg-[#207362] animate-pulse" },
+    completed: { label: "已完成", tone: "border-[#d8cbb7] bg-[#f9f4e9] text-[#6d6254]", dot: "bg-[#9a8b76]" },
+    starting: { label: "启动中", tone: "border-[#db9a34]/35 bg-[#db9a34]/12 text-[#8a5c16]", dot: "bg-[#db9a34] animate-pulse" },
+    error: { label: "错误", tone: "border-rose-300 bg-rose-50 text-rose-700", dot: "bg-rose-500" },
+  };
+  return map[status] || { label: status || "未知", tone: "border-[#d8cbb7] bg-[#f9f4e9] text-[#6d6254]", dot: "bg-[#9a8b76]" };
+}
+
+function minutes(duration?: number) {
+  return Math.max(1, Math.floor((duration || 0) / 60));
+}
+
 export function Discussions() {
   const queryClient = useQueryClient();
   const { data: discussions = [], isLoading } = useQuery({
     queryKey: ["discussions"],
-    queryFn: () => getDiscussions().then(d => d.items || []),
+    queryFn: () => getDiscussions().then((d) => d.items || []),
     staleTime: 10_000,
   });
 
@@ -29,93 +43,88 @@ export function Discussions() {
     deleteMutation.mutate(id);
   };
 
-  const statusLabel = (s: string) => {
-    const map: Record<string, string> = { running: "进行中", completed: "已完成", starting: "启动中", error: "错误" };
-    return map[s] || s;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="p-8 max-w-7xl mx-auto">
-        <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-48 bg-slate-200 rounded-2xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">圆桌讨论</h1>
-          <p className="text-slate-500 mt-1">管理并查看智能体圆桌会议</p>
-        </div>
-        <Link
-          to="/discussions/new"
-          className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-        >
-          <Plus size={18} />
-          新建讨论
-        </Link>
-      </div>
+    <div className="relative min-h-full overflow-hidden bg-[#f6f3ec] text-[#1d1a16]">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(29,26,22,0.045)_1px,transparent_1px),linear-gradient(rgba(29,26,22,0.045)_1px,transparent_1px)] bg-[size:48px_48px]" />
+      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="flex flex-col justify-between gap-4 border-b border-[#d8cbb7] pb-6 md:flex-row md:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8a6b37]">Roundtable Sessions</p>
+            <h1 className="mt-2 font-['Noto_Serif_SC'] text-3xl font-semibold leading-tight md:text-4xl">圆桌讨论</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6d6254]">查看实时讨论、历史回放和每场圆桌的参与角色。</p>
+          </div>
+          <Link
+            to="/discussions/new"
+            className="inline-flex h-11 w-fit items-center gap-2 rounded-lg bg-[#207362] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(32,115,98,0.24)] transition hover:-translate-y-0.5 hover:bg-[#185f51]"
+          >
+            <Plus size={18} />
+            新建讨论
+          </Link>
+        </header>
 
-      {discussions.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">
-          <p className="text-lg mb-2">暂无讨论</p>
-          <p>创建你的第一场圆桌讨论吧</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {discussions.map((disc: any, i: number) => (
-            <motion.div
-              key={disc.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-md transition-shadow group"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
-                  disc.status === "running" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"
-                }`}>
-                  {disc.status === "running" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                  {statusLabel(disc.status)}
-                </span>
-                <button
-                  onClick={(e) => handleDelete(e, disc.id)}
-                  className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                  title="删除讨论"
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="h-56 animate-pulse rounded-lg border border-[#d8cbb7] bg-[#fffdf7]" />
+            ))}
+          </div>
+        ) : discussions.length === 0 ? (
+          <section className="rounded-lg border border-dashed border-[#cdbfa9] bg-[#fffdf7] p-10 text-center shadow-[0_16px_44px_rgba(53,45,32,0.07)]">
+            <MessageSquare className="mx-auto text-[#db9a34]" size={34} />
+            <h2 className="mt-4 text-xl font-semibold">暂无讨论</h2>
+            <p className="mt-2 text-sm text-[#6d6254]">创建第一场圆桌讨论，把角色拉到同一张桌上。</p>
+          </section>
+        ) : (
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {discussions.map((disc: any, index: number) => {
+              const meta = statusMeta(disc.status);
+              return (
+                <motion.article
+                  key={disc.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.035 }}
+                  className="group rounded-lg border border-[#d8cbb7] bg-[#fffdf7] p-5 shadow-[0_14px_38px_rgba(53,45,32,0.08)] transition hover:-translate-y-0.5 hover:border-[#252018]"
                 >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              <h3 className="font-bold text-lg text-slate-900 mb-4 line-clamp-2">{disc.topic}</h3>
-              <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Users size={16} className="text-slate-400" />
-                  {disc.agents?.length || 0} 个参与智能体
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Clock size={16} className="text-slate-400" />
-                  时长: {Math.floor((disc.duration || 0) / 60)} 分钟
-                </div>
-              </div>
-              <div className="pt-4 border-t border-slate-100">
-                <Link
-                  to={`/discussions/${disc.id}`}
-                  className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-semibold py-2.5 rounded-xl transition-colors"
-                >
-                  <Play size={18} />
-                  {disc.status === "running" ? "加入实时会议" : "会议回放"}
-                </Link>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
+                  <div className="flex items-start justify-between gap-4">
+                    <span className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs font-semibold ${meta.tone}`}>
+                      <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                      {meta.label}
+                    </span>
+                    <button
+                      onClick={(e) => handleDelete(e, disc.id)}
+                      className="rounded-lg p-2 text-[#9a8b76] opacity-100 transition hover:bg-rose-50 hover:text-rose-600 md:opacity-0 md:group-hover:opacity-100"
+                      title="删除讨论"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <h2 className="mt-5 line-clamp-2 min-h-[3.5rem] text-lg font-semibold leading-7">{disc.topic}</h2>
+                  <div className="mt-4 grid gap-2 text-sm text-[#6d6254]">
+                    <div className="flex items-center gap-2">
+                      <Users size={16} className="text-[#8a6b37]" />
+                      {disc.agents?.length || 0} 个参与智能体
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock size={16} className="text-[#8a6b37]" />
+                      时长：{minutes(disc.duration)} 分钟
+                    </div>
+                  </div>
+                  <div className="mt-5 border-t border-[#e4dccd] pt-4">
+                    <Link
+                      to={`/discussions/${disc.id}`}
+                      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#1d1a16] text-sm font-semibold text-white transition hover:bg-[#2f281f]"
+                    >
+                      <Play size={17} />
+                      {disc.status === "running" ? "加入实时会议" : "会议回放"}
+                    </Link>
+                  </div>
+                </motion.article>
+              );
+            })}
+          </section>
+        )}
+      </div>
     </div>
   );
 }

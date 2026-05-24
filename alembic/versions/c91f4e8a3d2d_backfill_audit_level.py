@@ -1,4 +1,4 @@
-"""backfill audit level — align with CLAUDE.md section 12
+"""backfill audit level — align with AGENTS.md section 12
 
 Revision ID: c91f4e8a3d2d
 Revises: 7883e7a9b2c1

@@ -198,7 +198,7 @@ deepagents/
 ├── .env                        # 环境变量配置（不提交）
 ├── .gitignore                  # Git 忽略规则
 ├── README.md                   # 本文档
-├── CLAUDE.md                   # 项目技术文档
+├── AGENTS.md                   # 项目技术文档
 │
 ├── nvwa_agent/                 # 女娲 Agent 核心实现
 │   ├── __init__.py             # 包初始化
