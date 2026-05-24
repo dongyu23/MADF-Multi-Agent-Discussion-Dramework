@@ -84,6 +84,8 @@ def _patch_chatopenai() -> None:
 import uuid
 from pathlib import Path
 
+from sqlalchemy import func, select
+
 from agent_engine.skill_gen.agent import create_nvwa_agent
 from backend.config import settings
 from backend.deps import async_session_factory
@@ -91,7 +93,6 @@ from backend.models.skill_generation_event import SkillGenerationEvent
 from backend.services.audit.repository import AuditRepository
 from backend.services.character.file_manager import SKILLS_ROOT
 from backend.services.character.repository import CharacterRepository
-from sqlalchemy import func, select
 
 logger = logging.getLogger(__name__)
 
