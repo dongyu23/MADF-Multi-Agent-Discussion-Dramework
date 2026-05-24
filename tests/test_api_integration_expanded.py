@@ -72,23 +72,19 @@ class TestCharacterEdgeCases:
 
     @pytest.mark.asyncio
     async def test_files_path_traversal_protected(self, client, auth_headers):
-        """Attempt path traversal on file read — ValueError from file_manager blocks it.
-        Note: ValueError propagates unhandled through the ASGI transport, proving the block works.
-        """
+        """Path traversal on file read is blocked — returns 400 with INVALID_PARAMS."""
         import uuid
         uname = f"trav_test_{uuid.uuid4().hex[:8]}"
         r1 = await client.post("/api/v1/characters", json={"name": uname}, headers=auth_headers)
         skill_id = r1.json()["data"]["id"]
 
-        # The ValueError surfaces as an unhandled exception in test (ASGI transport
-        # doesn't always convert ValueError to 500). The key assertion is that
-        # path traversal IS blocked — verified by the ValueError.
-        with pytest.raises(ValueError, match="Path traversal denied"):
-            await client.get(
-                f"/api/v1/characters/{skill_id}/files",
-                params={"path": "../../../etc/passwd"},
-                headers=auth_headers,
-            )
+        r = await client.get(
+            f"/api/v1/characters/{skill_id}/files",
+            params={"path": "../../../etc/passwd"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 400
+        assert "traversal" in r.json()["message"].lower()
 
     @pytest.mark.asyncio
     async def test_delete_character_requires_auth(self, client):
