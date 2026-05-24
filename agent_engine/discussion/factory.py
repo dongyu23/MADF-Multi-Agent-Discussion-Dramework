@@ -145,14 +145,23 @@ def create_roundtable_agent(skill_path: str) -> "CompiledStateGraph":
     source_dir = str(skill_dir.resolve())
     backend = FilesystemBackend(root_dir="/", virtual_mode=True)
 
-    # Pre-load all skill files into system prompt — SKILL.md + references/*.md
-    # Eliminates the first `read_file` tool call, cutting first-think
-    # latency from two LLM round-trips (4-10s) to one (2-5s).
-    # `read_file` capability is preserved for future extensions.
+    # Pre-load skill files into system prompt, capped at 40KB characters.
+    # SKILL.md comes first, then reference files in order until the cap is hit.
+    MAX_SKILL_CHARS = 40_000
     skill_files: list[str] = []
+    total_chars = 0
     for md in sorted(skill_dir.rglob("*.md")):
         try:
-            skill_files.append(f"### {md.relative_to(skill_dir)}\n\n{md.read_text(encoding='utf-8')}")
+            text = md.read_text(encoding="utf-8")
+            header = f"### {md.relative_to(skill_dir)}\n\n"
+            chunk = header + text
+            if total_chars + len(chunk) > MAX_SKILL_CHARS:
+                remaining = MAX_SKILL_CHARS - total_chars
+                if remaining > len(header) + 50:
+                    skill_files.append(header + text[:remaining - len(header)] + "\n\n[文件被截断以控制上下文大小]")
+                break
+            skill_files.append(chunk)
+            total_chars += len(chunk)
         except Exception:
             pass
     skill_content = "\n\n---\n\n".join(skill_files)

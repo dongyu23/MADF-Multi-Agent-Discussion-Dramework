@@ -79,6 +79,20 @@ class RoundResult:
     was_forced: bool = False
 
 
+@dataclass
+class ThinkOutcome:
+    decision: AgentDecision
+    elapsed_ms: int
+    timed_out: bool = False
+    error: str | None = None
+
+
+THINK_TIMEOUT_SECONDS = 35
+STREAM_CHUNK_TIMEOUT_SECONDS = 10
+STREAM_MAX_CONSECUTIVE_TIMEOUTS = 5
+EMPTY_SPEECH_FALLBACK_TEXT = "本轮发言生成超时，已跳过空白内容。"
+
+
 async def _agent_think_fast(system_prompt: str, agent_id: str, agent_name: str,
                             context: str) -> AgentDecision:
     """Direct LLM call for think phase — bypasses deepagent graph for minimal latency."""
@@ -112,6 +126,30 @@ async def _agent_think_fast(system_prompt: str, agent_id: str, agent_name: str,
         reasoning=str(parsed.get("reasoning", "")),
         raw_output=raw,
     )
+
+
+async def _agent_think_with_metrics(system_prompt: str, agent_id: str, agent_name: str,
+                                    context: str) -> ThinkOutcome:
+    started = time.monotonic()
+    try:
+        decision = await _agent_think_fast(system_prompt, agent_id, agent_name, context)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return ThinkOutcome(decision=decision, elapsed_ms=elapsed_ms)
+    except Exception as exc:
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        logger.warning("Agent %s think failed after %sms", agent_name, elapsed_ms, exc_info=True)
+        return ThinkOutcome(
+            decision=AgentDecision(
+                agent_id=agent_id,
+                agent_name=agent_name,
+                decision="wait",
+                confidence=0.0,
+                reasoning="思考失败，降级为等待",
+                raw_output="",
+            ),
+            elapsed_ms=elapsed_ms,
+            error=str(exc),
+        )
 
 
 
@@ -272,13 +310,13 @@ async def _agent_think(agent, agent_id: str, agent_name: str, context: str, conf
     )
 
 
-async def _stream_with_timeout(agen, timeout: float):
+async def _stream_with_timeout(agen, timeout: float, max_timeouts: int = STREAM_MAX_CONSECUTIVE_TIMEOUTS):
     """Consume async generator, yielding chunks as they arrive.
 
     Runs the generator in a background task and communicates via an asyncio.Queue.
     This decouples the generator's execution from our consumption, so per-chunk
     timeouts never interfere with (cancel/kill) the underlying async generator.
-    After 5 consecutive empty-queue timeouts the stream is considered stuck.
+    After max_timeouts consecutive empty-queue timeouts the stream is considered stuck.
     """
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -299,9 +337,11 @@ async def _stream_with_timeout(agen, timeout: float):
                 chunk = await asyncio.wait_for(queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
                 consecutive_timeouts += 1
-                logger.debug("Stream chunk timeout (%d/5), continuing", consecutive_timeouts)
-                if consecutive_timeouts >= 5:
-                    logger.warning("Stream timed out 5 consecutive times, forcing stop")
+                logger.debug("Stream chunk timeout (%d/%d), continuing",
+                             consecutive_timeouts, max_timeouts)
+                if consecutive_timeouts >= max_timeouts:
+                    logger.warning("Stream timed out %d consecutive times, forcing stop",
+                                   max_timeouts)
                     break
                 continue
             if chunk is None:
@@ -349,6 +389,19 @@ async def _agent_speak_stream(agent, config: dict, speak_prompt: str):
             await asyncio.sleep(0.05)
 
 
+async def _agent_speak_once(agent, config: dict, speak_prompt: str) -> str:
+    """Non-streaming fallback used only when streaming produced no text."""
+    try:
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": speak_prompt}]},
+            config,
+        )
+        return str(result["messages"][-1].content).strip()
+    except Exception:
+        logger.warning("agent speak fallback failed", exc_info=True)
+        return ""
+
+
 class Orchestrator:
     """Manages one discussion's lifecycle."""
 
@@ -378,8 +431,17 @@ class Orchestrator:
         self.status = "running"
         results: list[RoundResult] = []
         start_time = time.time()
+        run_started = time.monotonic()
+
+        # Make the room visibly alive before expensive skill loading starts.
+        if self.on_event:
+            await self.on_event("host_intro_start", {
+                "discussion_id": str(self.discussion_id),
+                "phase": "preparing_agents",
+            })
 
         # Build agents
+        build_started = time.monotonic()
         agents: dict[str, Any] = {}
         agent_configs: dict[str, dict] = {}
         agent_prompts: dict[str, str] = {}
@@ -388,11 +450,19 @@ class Orchestrator:
             agents[name] = agent
             agent_prompts[name] = prompt
             agent_configs[name] = {"configurable": {"thread_id": f"disc-{self.discussion_id}-{name}"}}
+        agent_build_ms = int((time.monotonic() - build_started) * 1000)
+        prompt_sizes = {name: len(p) for name, p in agent_prompts.items()}
+        logger.info("disc=%s agents_built=%d ms=%s prompt_sizes=%s",
+                     self.discussion_id, len(agents), agent_build_ms, prompt_sizes)
+        if self.on_event:
+            await self.on_event("host_intro_ready", {
+                "discussion_id": str(self.discussion_id),
+                "agent_count": len(agents),
+                "agent_build_ms": agent_build_ms,
+                "elapsed_ms": int((time.monotonic() - run_started) * 1000),
+            })
 
         # ── Host intro: streamed LLM opening ──
-        if self.on_event:
-            await self.on_event("host_intro_start", {"discussion_id": str(self.discussion_id)})
-
         intro_prompt = (
             f"你是一位圆桌论坛的主持人。现场有几十位观众，他们是认真来听的。\n\n"
             f"讨论主题：{self.topic}\n"
@@ -412,22 +482,39 @@ class Orchestrator:
             f"- 禁止辱骂、审判性语言、段子手、包装词。"
         )
         intro_content = ""
+        intro_started = time.monotonic()
+        intro_first_token_ms: int | None = None
         if self.on_event:
             batch: list[str] = []
             last_flush = time.monotonic()
-            async for token in _stream_with_timeout(_call_host_llm_stream(intro_prompt), timeout=10):
+            async for token in _stream_with_timeout(
+                _call_host_llm_stream(intro_prompt),
+                timeout=STREAM_CHUNK_TIMEOUT_SECONDS,
+            ):
+                if intro_first_token_ms is None:
+                    intro_first_token_ms = int((time.monotonic() - intro_started) * 1000)
                 intro_content += token
                 batch.append(token)
                 if time.monotonic() - last_flush >= 0.08:
-                    await self.on_event("host_intro_chunk", {"content": "".join(batch)})
+                    await self.on_event("host_intro_chunk", {
+                        "content": "".join(batch),
+                        "first_token_ms": intro_first_token_ms,
+                    })
                     batch.clear()
                     last_flush = time.monotonic()
             if batch:
-                await self.on_event("host_intro_chunk", {"content": "".join(batch)})
-        await self.on_event("host_intro", {
-            "discussion_id": str(self.discussion_id),
-            "content": intro_content,
-        })
+                await self.on_event("host_intro_chunk", {
+                    "content": "".join(batch),
+                    "first_token_ms": intro_first_token_ms,
+                })
+        if self.on_event:
+            await self.on_event("host_intro", {
+                "discussion_id": str(self.discussion_id),
+                "content": intro_content,
+                "agent_build_ms": agent_build_ms,
+                "host_first_token_ms": intro_first_token_ms,
+                "host_total_ms": int((time.monotonic() - intro_started) * 1000),
+            })
 
         # Main round loop
         while time.time() - start_time < self.duration:
@@ -437,54 +524,72 @@ class Orchestrator:
             if self.on_event:
                 await self.on_event("round_start", {"round": round_num})
 
-            # Step 1: All agents think — each wrapped with timeout
+            # Step 1: All agents think — one shared deadline for the whole round.
             context = self._build_think_context(round_num)
+            think_started = time.monotonic()
             think_tasks = {
                 name: asyncio.create_task(
-                    _agent_think_fast(agent_prompts[name], str(uuid.uuid4()), name, context)
+                    _agent_think_with_metrics(agent_prompts[name], str(uuid.uuid4()), name, context)
                 )
                 for name in agents
             }
+            if self.on_event:
+                for name in agents:
+                    await self.on_event("agent_think_started", {
+                        "agent_name": name,
+                        "round": round_num,
+                        "timeout_seconds": THINK_TIMEOUT_SECONDS,
+                    })
             decisions: list[AgentDecision] = []
             interrupted = False
+            done, pending = await asyncio.wait(
+                think_tasks.values(),
+                timeout=THINK_TIMEOUT_SECONDS,
+            )
+            if self._interrupt.is_set():
+                pending = set(think_tasks.values())
+                done = set()
+                self._interrupt.clear()
+                interrupted = True
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
             for name, task in think_tasks.items():
-                if self._interrupt.is_set():
-                    for t in think_tasks.values():
-                        if not t.done():
-                            t.cancel()
-                    for t in think_tasks.values():
-                        try:
-                            await t
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                    self._interrupt.clear()
-                    interrupted = True
+                if interrupted:
                     break
-                is_timeout = False
-                try:
-                    d = await asyncio.wait_for(task, timeout=20)
-                except asyncio.TimeoutError:
-                    logger.warning("Agent %s think timeout (20s), falling back to wait", name)
-                    is_timeout = True
-                    d = AgentDecision(
-                        agent_id=str(uuid.uuid4()),
-                        agent_name=name,
-                        decision="wait",
-                        confidence=0.0,
-                        reasoning="思考超时，降级为等待",
-                        raw_output="",
+                if task in done:
+                    outcome = task.result()
+                else:
+                    elapsed_ms = int((time.monotonic() - think_started) * 1000)
+                    logger.warning("Agent %s think timeout (%ss), falling back to wait",
+                                   name, THINK_TIMEOUT_SECONDS)
+                    outcome = ThinkOutcome(
+                        decision=AgentDecision(
+                            agent_id=str(uuid.uuid4()),
+                            agent_name=name,
+                            decision="wait",
+                            confidence=0.0,
+                            reasoning=f"思考超时（{THINK_TIMEOUT_SECONDS}s）",
+                            raw_output="",
+                        ),
+                        elapsed_ms=elapsed_ms,
+                        timed_out=True,
                     )
-                    if self.on_event:
-                        await self.on_event("agent_think", {
-                            "agent_id": d.agent_id,
-                            "agent_name": name,
-                            "round": round_num,
-                            "decision": "wait",
-                            "confidence": 0.0,
-                            "reasoning": "思考超时（20s）",
-                        })
+
+                d = outcome.decision
                 decisions.append(d)
-                if self.on_event and not is_timeout:
+                if self.on_event:
+                    metric_event = "agent_think_timeout" if outcome.timed_out else "agent_think_finished"
+                    await self.on_event(metric_event, {
+                        "agent_id": d.agent_id,
+                        "agent_name": d.agent_name,
+                        "round": round_num,
+                        "elapsed_ms": outcome.elapsed_ms,
+                        "timeout_seconds": THINK_TIMEOUT_SECONDS,
+                        "error": outcome.error,
+                    })
                     await self.on_event("agent_think", {
                         "agent_id": d.agent_id,
                         "agent_name": d.agent_name,
@@ -492,6 +597,8 @@ class Orchestrator:
                         "decision": d.decision,
                         "confidence": d.confidence,
                         "reasoning": d.reasoning,
+                        "elapsed_ms": outcome.elapsed_ms,
+                        "timed_out": outcome.timed_out,
                     })
 
             if interrupted:
@@ -531,17 +638,22 @@ class Orchestrator:
             )
             # Stream speak tokens — typewriter effect via on_event callbacks
             full_speech = ""
+            speak_started = time.monotonic()
+            speak_first_token_ms: int | None = None
             if self.on_event:
                 await self.on_event("agent_speak_start", {
                     "agent_id": chosen.agent_id,
                     "agent_name": chosen.agent_name,
                     "round": round_num,
+                    "timeout_seconds": STREAM_CHUNK_TIMEOUT_SECONDS,
                 })
             batch = []
             last_flush = time.monotonic()
             async for chunk in _stream_with_timeout(
                 _agent_speak_stream(agents[chosen.agent_name], agent_configs[chosen.agent_name], speak_prompt),
-                timeout=10):
+                timeout=STREAM_CHUNK_TIMEOUT_SECONDS):
+                if speak_first_token_ms is None:
+                    speak_first_token_ms = int((time.monotonic() - speak_started) * 1000)
                 full_speech += chunk
                 batch.append(chunk)
                 if time.monotonic() - last_flush >= 0.08:
@@ -551,6 +663,7 @@ class Orchestrator:
                             "agent_name": chosen.agent_name,
                             "round": round_num,
                             "content": "".join(batch),
+                            "first_token_ms": speak_first_token_ms,
                         })
                     batch.clear()
                     last_flush = time.monotonic()
@@ -560,13 +673,55 @@ class Orchestrator:
                     "agent_name": chosen.agent_name,
                     "round": round_num,
                     "content": "".join(batch),
+                    "first_token_ms": speak_first_token_ms,
                 })
+
+            used_fallback = False
+            if not full_speech.strip():
+                logger.warning("Agent %s produced empty speech in round %d; trying fallback",
+                               chosen.agent_name, round_num)
+                used_fallback = True
+                full_speech = await _agent_speak_once(
+                    agents[chosen.agent_name],
+                    agent_configs[chosen.agent_name],
+                    speak_prompt,
+                )
+                if full_speech and self.on_event:
+                    speak_first_token_ms = speak_first_token_ms or int(
+                        (time.monotonic() - speak_started) * 1000
+                    )
+                    await self.on_event("agent_speak_chunk", {
+                        "agent_id": chosen.agent_id,
+                        "agent_name": chosen.agent_name,
+                        "round": round_num,
+                        "content": full_speech,
+                        "first_token_ms": speak_first_token_ms,
+                        "fallback": True,
+                    })
+
+            empty_speech = not full_speech.strip()
+            if empty_speech:
+                full_speech = EMPTY_SPEECH_FALLBACK_TEXT
+                if self.on_event:
+                    await self.on_event("agent_speak_timeout", {
+                        "agent_id": chosen.agent_id,
+                        "agent_name": chosen.agent_name,
+                        "round": round_num,
+                        "content": full_speech,
+                        "speak_first_token_ms": speak_first_token_ms,
+                        "speak_total_ms": int((time.monotonic() - speak_started) * 1000),
+                        "empty_speech": True,
+                    })
             if self.on_event:
                 await self.on_event("agent_speak_end", {
                     "agent_id": chosen.agent_id,
                     "agent_name": chosen.agent_name,
                     "round": round_num,
                     "content": full_speech,
+                    "speak_first_token_ms": speak_first_token_ms,
+                    "speak_total_ms": int((time.monotonic() - speak_started) * 1000),
+                    "empty_speech": empty_speech,
+                    "fallback": used_fallback,
                 })
 
             self.messages.append({
